@@ -96,23 +96,80 @@ export function TelemetryMonitor() {
       return;
     }
 
-    const source = new EventSource(
-      `/api/telemetry/stream?farmId=${encodeURIComponent(farmId)}&deviceId=${encodeURIComponent(deviceId)}`,
+    let disposed = false;
+    const configuredUrl = process.env.NEXT_PUBLIC_WS_URL;
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const baseUrl = (configuredUrl ?? `${protocol}//${window.location.hostname}:3001`)
+      .trim()
+      .replace(/\/$/, "");
+    const socket = new WebSocket(
+      `${baseUrl}/ws?farmId=${encodeURIComponent(farmId)}&deviceId=${encodeURIComponent(deviceId)}`,
     );
 
-    source.onopen = () => setConnectionState("connected");
-    source.onerror = () => setConnectionState("reconnecting");
-    source.addEventListener("telemetry", (event) => {
-      const envelope = parseDeviceMessageEnvelope(
-        (event as MessageEvent<string>).data,
-      );
-
-      if (envelope) {
-        setEvents((current) => [envelope, ...current].slice(0, 20));
+    socket.onopen = () => {
+      if (!disposed) {
+        setError(null);
+        setConnectionState("connecting");
       }
-    });
+    };
 
-    return () => source.close();
+    socket.onerror = () => {
+      if (!disposed) {
+        setConnectionState("reconnecting");
+        setError("WebSocket unavailable. Start npm run ws:server.");
+      }
+    };
+
+    socket.onclose = () => {
+      if (!disposed) {
+        setConnectionState("reconnecting");
+      }
+    };
+
+    socket.onmessage = (event) => {
+      if (disposed) {
+        return;
+      }
+
+      try {
+        const frame: unknown = JSON.parse(event.data as string);
+
+        if (typeof frame !== "object" || frame === null) {
+          return;
+        }
+
+        const candidate = frame as { type?: unknown; data?: unknown };
+
+        if (candidate.type === "ready") {
+          setError(null);
+          setConnectionState("connected");
+          return;
+        }
+
+        if (
+          candidate.type !== "telemetry" ||
+          typeof candidate.data !== "object" ||
+          candidate.data === null
+        ) {
+          return;
+        }
+
+        const envelope = parseDeviceMessageEnvelope(
+          JSON.stringify(candidate.data),
+        );
+
+        if (envelope) {
+          setEvents((current) => [envelope, ...current].slice(0, 20));
+        }
+      } catch {
+        return;
+      }
+    };
+
+    return () => {
+      disposed = true;
+      socket.close();
+    };
   }, [farmId, deviceId]);
 
   function handleFarmChange(nextFarmId: string) {
@@ -143,7 +200,7 @@ export function TelemetryMonitor() {
             Live telemetry
           </h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Messages flow from MQTT through Redis Pub/Sub into this page.
+            Messages flow from MQTT through Redis Pub/Sub and WebSocket into this page.
           </p>
         </div>
 
