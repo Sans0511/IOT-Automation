@@ -24,6 +24,7 @@ import {
   FARM_CANVAS_WIDTH,
   FARM_DEVICE_PORT_OFFSET,
   FARM_LAYOUT_GRID,
+  findNearbyFarmDevicePort,
   isFarmDevicePresetKey,
   type FarmBackgroundItemType,
   type FarmDevicePort,
@@ -488,6 +489,17 @@ export default function FarmCanvas({
     return toContent(stage?.getPointerPosition() ?? { x: 0, y: 0 });
   }
 
+  function selectNearbyPortOr(point: FarmPoint, fallback: () => void) {
+    const nearbyPort = findNearbyFarmDevicePort(point, placements, devices);
+
+    if (nearbyPort) {
+      onSelect(nearbyPort.deviceId, nearbyPort.port);
+      return;
+    }
+
+    fallback();
+  }
+
   function resolveEndpoint(
     connection: FarmLayoutConnection,
     side: "from" | "to",
@@ -681,30 +693,32 @@ export default function FarmCanvas({
       return;
     }
 
-    if (port) {
-      const [deviceId, portName] = (port.id() ?? "").split(":");
-      if (deviceId && (portName === "inlet" || portName === "outlet")) {
-        onSelect(deviceId, portName);
+    selectNearbyPortOr(point, () => {
+      if (port) {
+        const [deviceId, portName] = (port.id() ?? "").split(":");
+        if (deviceId && (portName === "inlet" || portName === "outlet")) {
+          onSelect(deviceId, portName);
+          return;
+        }
+      }
+
+      if (device?.id()) {
+        onSelect(device.id());
         return;
       }
-    }
 
-    if (device?.id()) {
-      onSelect(device.id());
-      return;
-    }
+      if (background?.id()) {
+        onSelectBackgroundItem(background.id());
+        return;
+      }
 
-    if (background?.id()) {
-      onSelectBackgroundItem(background.id());
-      return;
-    }
+      if (line?.id()) {
+        onSelectFlowConnection(line.id(), point);
+        return;
+      }
 
-    if (line?.id()) {
-      onSelectFlowConnection(line.id(), point);
-      return;
-    }
-
-    onFinishFlow(point);
+      onFinishFlow(point);
+    });
   }
 
   function handleDrop(event: ReactDragEvent<HTMLDivElement>) {
@@ -799,7 +813,7 @@ export default function FarmCanvas({
           if (linkMode) {
             const point = stagePointerToContent(stage);
             setDraftPoint(point);
-            onCanvasFlowPoint(point);
+            selectNearbyPortOr(point, () => onCanvasFlowPoint(point));
             return;
           }
 
@@ -817,7 +831,7 @@ export default function FarmCanvas({
           if (linkMode) {
             const point = stagePointerToContent(stage);
             setDraftPoint(point);
-            onCanvasFlowPoint(point);
+            selectNearbyPortOr(point, () => onCanvasFlowPoint(point));
             return;
           }
 
@@ -841,7 +855,8 @@ export default function FarmCanvas({
           }
 
           event.evt.preventDefault();
-          onFinishFlow(stagePointerToContent(event.target.getStage()));
+          const point = stagePointerToContent(event.target.getStage());
+          selectNearbyPortOr(point, () => onFinishFlow(point));
         }}
         onDblTap={(event) => {
           if (!linkMode || !linkSource || event.target !== event.target.getStage()) {
@@ -849,7 +864,8 @@ export default function FarmCanvas({
           }
 
           event.evt.preventDefault();
-          onFinishFlow(stagePointerToContent(event.target.getStage()));
+          const point = stagePointerToContent(event.target.getStage());
+          selectNearbyPortOr(point, () => onFinishFlow(point));
         }}
         onMouseUp={handleFlowPointerUp}
         onTouchEnd={handleFlowPointerUp}

@@ -17,6 +17,7 @@ import {
   createPresetDevice,
   createPresetDeviceId,
   derivePresetDevices,
+  findNearbyFarmDevicePort,
   FARM_CANVAS_HEIGHT,
   FARM_CANVAS_WIDTH,
   FARM_BACKGROUND_LABELS,
@@ -301,12 +302,35 @@ export default function FarmLayoutEditor({
     setError(null);
   }
 
+  function snapFlowEndpoint(endpoint: FarmFlowEndpointRef): FarmFlowEndpointRef {
+    if (endpoint.kind !== "point") {
+      return endpoint;
+    }
+
+    const nearbyPort = findNearbyFarmDevicePort(
+      endpoint.point,
+      layout.placements,
+      allDevices,
+    );
+
+    return nearbyPort
+      ? {
+          kind: "device",
+          deviceId: nearbyPort.deviceId,
+          port: nearbyPort.port,
+        }
+      : endpoint;
+  }
+
   function finishFlow(target: FarmFlowEndpointRef) {
     if (!linkSource) {
       return;
     }
 
-    if (sameFlowEndpoint(linkSource, target)) {
+    const resolvedSource = snapFlowEndpoint(linkSource);
+    const resolvedTarget = snapFlowEndpoint(target);
+
+    if (sameFlowEndpoint(resolvedSource, resolvedTarget)) {
       setMessage("Pick a different end point for this flow.");
       return;
     }
@@ -317,8 +341,8 @@ export default function FarmLayoutEditor({
       return (
         from !== null &&
         to !== null &&
-        sameFlowEndpoint(from, linkSource) &&
-        sameFlowEndpoint(to, target)
+        sameFlowEndpoint(from, resolvedSource) &&
+        sameFlowEndpoint(to, resolvedTarget)
       );
     });
 
@@ -329,7 +353,7 @@ export default function FarmLayoutEditor({
         ...current,
         connections: [
           ...current.connections,
-          createFarmFlowConnection(linkSource, target, draftWaypoints),
+          createFarmFlowConnection(resolvedSource, resolvedTarget, draftWaypoints),
         ],
       }));
       setIsDirty(true);

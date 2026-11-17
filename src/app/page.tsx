@@ -1,8 +1,10 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { connection } from "next/server";
+import { PublishedLayoutPanel } from "@/components/PublishedLayoutPanel";
 import { TelemetryMonitor } from "@/components/TelemetryMonitor";
 import { verifyAccessToken } from "@/lib/api-auth";
+import { getPublishedLayoutsByEmail } from "@/lib/published-layout";
 
 export const instant = false;
 
@@ -10,6 +12,9 @@ export default async function Home() {
   await connection();
   const cookieStore = await cookies();
   const user = verifyAccessToken(cookieStore.get("access_token")?.value ?? "");
+  const publishedLayouts = user
+    ? await getPublishedLayoutsByEmail(user.email)
+    : null;
 
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center justify-center gap-8 bg-zinc-50 p-6 font-sans dark:bg-black">
@@ -27,6 +32,11 @@ export default async function Home() {
         ) : null}
       </div>
       <TelemetryMonitor />
+      <PublishedLayoutPanel
+        initialEmail={user?.email ?? ""}
+        initialFarms={publishedLayouts?.farms ?? []}
+        canViewOtherEmails={user?.role === "ADMIN"}
+      />
     </main>
   );
 }

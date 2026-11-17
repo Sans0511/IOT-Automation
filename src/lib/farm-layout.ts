@@ -103,6 +103,82 @@ export type FarmLayoutDevice = {
   type: string;
 };
 
+export const FARM_FLOW_PORT_SNAP_DISTANCE = 28;
+
+export function getFarmDevicePorts(type: string): FarmDevicePort[] {
+  if (type === "SOLENOID_VALVE" || type === "VALVE") {
+    return ["inlet", "outlet"];
+  }
+
+  if (
+    type === "PUMP" ||
+    type === "MOTOR_PUMP" ||
+    type === "SMART_IRRIGATION_CONTROLLER"
+  ) {
+    return ["outlet"];
+  }
+
+  return [];
+}
+
+export function getFarmDevicePortPoint(
+  placement: FarmLayoutPlacement,
+  port: FarmDevicePort,
+): FarmPoint {
+  const radians = (placement.rotation * Math.PI) / 180;
+  const distance =
+    port === "inlet" ? -FARM_DEVICE_PORT_OFFSET : FARM_DEVICE_PORT_OFFSET;
+
+  return {
+    x: placement.x + distance * Math.cos(radians),
+    y: placement.y + distance * Math.sin(radians),
+  };
+}
+
+export function findNearbyFarmDevicePort(
+  point: FarmPoint,
+  placements: FarmLayoutPlacement[],
+  devices: FarmLayoutDevice[],
+  maxDistance = FARM_FLOW_PORT_SNAP_DISTANCE,
+): {
+  deviceId: string;
+  port: FarmDevicePort;
+  point: FarmPoint;
+  distance: number;
+} | null {
+  const devicesById = new Map(devices.map((device) => [device.id, device]));
+  let closest: {
+    deviceId: string;
+    port: FarmDevicePort;
+    point: FarmPoint;
+    distance: number;
+  } | null = null;
+
+  for (const placement of placements) {
+    const device = devicesById.get(placement.deviceId);
+    const type = device?.type ?? placement.presetKey ?? "";
+
+    for (const port of getFarmDevicePorts(type)) {
+      const portPoint = getFarmDevicePortPoint(placement, port);
+      const distance = Math.hypot(
+        point.x - portPoint.x,
+        point.y - portPoint.y,
+      );
+
+      if (distance <= maxDistance && (!closest || distance < closest.distance)) {
+        closest = {
+          deviceId: placement.deviceId,
+          port,
+          point: portPoint,
+          distance,
+        };
+      }
+    }
+  }
+
+  return closest;
+}
+
 export const DEVICE_TYPE_LABELS: Record<string, string> = {
   VALVE: "Valve",
   PUMP: "Pump",
