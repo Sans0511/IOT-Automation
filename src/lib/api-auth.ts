@@ -8,10 +8,7 @@ export interface AuthenticatedUser {
   role: Role;
 }
 
-export function getAuthenticatedUser(
-  request: NextRequest,
-): AuthenticatedUser | null {
-  const token = request.cookies.get("access_token")?.value;
+export function verifyAccessToken(token: string): AuthenticatedUser | null {
   const secret = process.env.JWT_ACCESS_SECRET;
 
   if (!token || !secret) {
@@ -39,6 +36,38 @@ export function getAuthenticatedUser(
   } catch {
     return null;
   }
+}
+
+function readCookie(cookieHeader: string, name: string): string | null {
+  for (const entry of cookieHeader.split(";")) {
+    const separator = entry.indexOf("=");
+
+    if (separator === -1) {
+      continue;
+    }
+
+    if (entry.slice(0, separator).trim() === name) {
+      return decodeURIComponent(entry.slice(separator + 1).trim());
+    }
+  }
+
+  return null;
+}
+
+export function getAuthenticatedUser(
+  request: NextRequest,
+): AuthenticatedUser | null {
+  return verifyAccessToken(request.cookies.get("access_token")?.value ?? "");
+}
+
+export function getAuthenticatedUserFromCookieHeader(
+  cookieHeader: string | null | undefined,
+): AuthenticatedUser | null {
+  if (!cookieHeader) {
+    return null;
+  }
+
+  return verifyAccessToken(readCookie(cookieHeader, "access_token") ?? "");
 }
 
 export function canAccessOwner(
