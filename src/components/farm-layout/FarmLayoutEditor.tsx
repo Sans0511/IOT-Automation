@@ -41,6 +41,28 @@ type LayoutClipboard =
     }
   | { kind: "background"; item: FarmLayoutBackgroundItem };
 
+async function fetchWithSessionRetry(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  const response = await fetch(url, { ...init, credentials: "same-origin" });
+
+  if (response.status !== 401) {
+    return response;
+  }
+
+  const refreshResponse = await fetch("/api/auth/refresh", {
+    method: "POST",
+    credentials: "same-origin",
+  });
+
+  if (!refreshResponse.ok) {
+    return response;
+  }
+
+  return fetch(url, { ...init, credentials: "same-origin" });
+}
+
 const FarmCanvas = dynamic(() => import("./FarmCanvas"), {
   ssr: false,
   loading: () => (
@@ -843,27 +865,33 @@ export default function FarmLayoutEditor({
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/admin/farms/${farmId}/layout`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          version: layout.version,
-          backgroundKey: layout.backgroundKey,
-          width: layout.width,
-          height: layout.height,
-          placements: layout.placements,
-          backgroundItems: layout.backgroundItems,
-          connections: layout.connections,
-        }),
-      });
+      const response = await fetchWithSessionRetry(
+        `/api/admin/farms/${farmId}/layout`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            version: layout.version,
+            backgroundKey: layout.backgroundKey,
+            width: layout.width,
+            height: layout.height,
+            placements: layout.placements,
+            backgroundItems: layout.backgroundItems,
+            connections: layout.connections,
+          }),
+        },
+      );
       const data = (await response.json()) as {
         layout?: FarmLayoutData;
         error?: string;
       };
 
       if (!response.ok || !data.layout) {
-        setError(data.error ?? "Unable to save layout");
+        setError(
+          response.status === 401
+            ? "Your session expired. Please sign in again."
+            : (data.error ?? "Unable to save layout"),
+        );
         return;
       }
 
@@ -886,9 +914,10 @@ export default function FarmLayoutEditor({
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/admin/farms/${farmId}/layout`, {
-        credentials: "same-origin",
-      });
+      const response = await fetchWithSessionRetry(
+        `/api/admin/farms/${farmId}/layout`,
+        {},
+      );
       const data = (await response.json()) as {
         layout?: FarmLayoutData;
         error?: string;
