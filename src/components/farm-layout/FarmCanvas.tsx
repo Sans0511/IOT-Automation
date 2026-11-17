@@ -2,9 +2,19 @@
 
 import Konva from "konva";
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
-import { Circle, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
+import {
+  Circle,
+  Group,
+  Image as KonvaImage,
+  Layer,
+  Line,
+  Rect,
+  Stage,
+  Text,
+} from "react-konva";
 import BackgroundItemNode from "./BackgroundItemNode";
 import ConnectionLine from "./ConnectionLine";
+import { useCanvasImage } from "./useCanvasImage";
 import {
   BACKGROUND_ITEM_DRAG_TYPE,
   DEVICE_PRESET_DRAG_TYPE,
@@ -78,6 +88,7 @@ const DEVICE_COLORS: Record<string, string> = {
   WATER_TANK: "#0284c7",
   MOTOR_PUMP: "#7c3aed",
   SOLENOID_VALVE: "#ea580c",
+  RAIN_DETECTION: "#0ea5e9",
   SPRINKLER_LINE: "#059669",
   SMART_IRRIGATION_CONTROLLER: "#4f46e5",
   DELIVERY_POINT: "#65a30d",
@@ -160,6 +171,26 @@ function DeviceNode({
   onMove: (deviceId: string, x: number, y: number) => void;
 }) {
   const color = DEVICE_COLORS[device.type] ?? "#64748b";
+  const motorPumpImage = useCanvasImage(
+    device.type === "MOTOR_PUMP"
+      ? "/background-items/motor-pump-icon.svg"
+      : null,
+  );
+  const solenoidValveImage = useCanvasImage(
+    device.type === "SOLENOID_VALVE"
+      ? "/background-items/solenoid-valve-icon.svg"
+      : null,
+  );
+  const moistureSensorImage = useCanvasImage(
+    device.type === "MOISTURE_SENSOR"
+      ? "/background-items/moisture-detection-device-icon.svg"
+      : null,
+  );
+  const rainDetectionImage = useCanvasImage(
+    device.type === "RAIN_DETECTION"
+      ? "/background-items/rain-detection-device-icon.svg"
+      : null,
+  );
 
   return (
     <Group
@@ -208,7 +239,15 @@ function DeviceNode({
         />
       ) : null}
       <Circle radius={25} fill="#ffffff" stroke={color} strokeWidth={4} />
-      {device.type === "VALVE" || device.type === "SOLENOID_VALVE" ? (
+      {device.type === "SOLENOID_VALVE" && solenoidValveImage ? (
+        <KonvaImage
+          image={solenoidValveImage}
+          x={-29}
+          y={-27}
+          width={58}
+          height={54}
+        />
+      ) : device.type === "VALVE" || device.type === "SOLENOID_VALVE" ? (
         <>
           <Rect x={-11} y={-4} width={22} height={8} fill={color} cornerRadius={3} />
           <Rect x={-4} y={-11} width={8} height={22} fill={color} cornerRadius={3} />
@@ -238,13 +277,40 @@ function DeviceNode({
           <Line points={[13, -10, 18, -17]} stroke={color} strokeWidth={2} />
         </>
       ) : null}
-      {device.type === "MOISTURE_SENSOR" ? (
+      {device.type === "MOISTURE_SENSOR" && moistureSensorImage ? (
+        <KonvaImage
+          image={moistureSensorImage}
+          x={-29}
+          y={-27}
+          width={58}
+          height={54}
+        />
+      ) : device.type === "MOISTURE_SENSOR" ? (
         <>
           <Line points={[0, -12, 0, 5]} stroke={color} strokeWidth={4} />
           <Circle y={11} radius={7} fill={color} />
         </>
       ) : null}
-      {device.type === "PUMP" || device.type === "MOTOR_PUMP" ? (
+      {device.type === "RAIN_DETECTION" && rainDetectionImage ? (
+        <KonvaImage
+          image={rainDetectionImage}
+          x={-29}
+          y={-27}
+          width={58}
+          height={54}
+        />
+      ) : device.type === "RAIN_DETECTION" ? (
+        <Circle radius={12} fill={color} />
+      ) : null}
+      {device.type === "MOTOR_PUMP" && motorPumpImage ? (
+        <KonvaImage
+          image={motorPumpImage}
+          x={-29}
+          y={-27}
+          width={58}
+          height={54}
+        />
+      ) : device.type === "PUMP" || device.type === "MOTOR_PUMP" ? (
         <>
           <Rect x={-12} y={-10} width={24} height={20} fill={color} cornerRadius={4} />
           <Circle x={7} y={0} radius={5} fill="#ffffff" />

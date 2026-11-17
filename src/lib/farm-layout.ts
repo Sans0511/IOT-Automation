@@ -8,6 +8,9 @@ export const FARM_DEVICE_PORT_OFFSET = 30;
 
 export const FARM_BACKGROUND_ITEM_TYPES = [
   "TREE",
+  "APPLE_TREE",
+  "MANGO_TREE",
+  "ROSE_PLANT",
   "WATER_TANK",
   "POND",
   "SHED",
@@ -30,6 +33,8 @@ export const FARM_DEVICE_PRESET_LABELS = {
   WATER_TANK: "Water Tank",
   MOTOR_PUMP: "Motor Pump",
   SOLENOID_VALVE: "Solenoid Valve",
+  MOISTURE_SENSOR: "Moisture Sensor",
+  RAIN_DETECTION: "Rain Detection",
   SPRINKLER_LINE: "Sprinkler Line",
   SMART_IRRIGATION_CONTROLLER: "Smart Irrigation Controller",
   DELIVERY_POINT: "Delivery Point",
@@ -101,7 +106,6 @@ export type FarmLayoutDevice = {
 
 export const DEVICE_TYPE_LABELS: Record<string, string> = {
   VALVE: "Valve",
-  MOISTURE_SENSOR: "Moisture sensor",
   PUMP: "Pump",
   WEATHER_STATION: "Weather station",
   ...FARM_DEVICE_PRESET_LABELS,
@@ -109,6 +113,9 @@ export const DEVICE_TYPE_LABELS: Record<string, string> = {
 
 export const FARM_BACKGROUND_LABELS: Record<FarmBackgroundItemType, string> = {
   TREE: "Tree",
+  APPLE_TREE: "Apple tree",
+  MANGO_TREE: "Mango tree",
+  ROSE_PLANT: "Rose plant",
   WATER_TANK: "Water tank",
   POND: "Pond",
   SHED: "Shed",

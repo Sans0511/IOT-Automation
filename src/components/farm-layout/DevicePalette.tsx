@@ -23,6 +23,8 @@ const PALETTE_COLORS: Record<string, string> = {
     "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
   SOLENOID_VALVE:
     "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300",
+  RAIN_DETECTION:
+    "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
   SPRINKLER_LINE:
     "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
   SMART_IRRIGATION_CONTROLLER:
@@ -34,6 +36,13 @@ const PALETTE_COLORS: Record<string, string> = {
 const PRESET_KEYS = new Set<string>(
   FARM_DEVICE_PRESETS.map((preset) => preset.key),
 );
+
+const PRESET_ICONS: Partial<Record<FarmDevicePresetKey, string>> = {
+  MOTOR_PUMP: "/background-items/motor-pump-icon.svg",
+  SOLENOID_VALVE: "/background-items/solenoid-valve-icon.svg",
+  MOISTURE_SENSOR: "/background-items/moisture-detection-device-icon.svg",
+  RAIN_DETECTION: "/background-items/rain-detection-device-icon.svg",
+};
 
 export default function DevicePalette({
   devices,
@@ -86,31 +95,48 @@ export default function DevicePalette({
           Irrigation presets
         </p>
         <div className="space-y-2">
-          {FARM_DEVICE_PRESETS.map((preset) => (
-            <button
-              key={preset.key}
-              type="button"
-              draggable
-              onDragStart={(event) => {
-                event.dataTransfer.setData(DEVICE_PRESET_DRAG_TYPE, preset.key);
-                event.dataTransfer.effectAllowed = "copy";
-              }}
-              onClick={() => onAddPreset(preset.key)}
-              title="Drag onto the canvas, or click to add in the center"
-              className="flex w-full cursor-grab items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-emerald-300 hover:bg-emerald-50/50 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-950 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/20"
-            >
-              <span
-                className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${PALETTE_COLORS[preset.key]}`}
+          {FARM_DEVICE_PRESETS.map((preset) => {
+            const icon = PRESET_ICONS[preset.key];
+
+            return (
+              <button
+                key={preset.key}
+                type="button"
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.setData(DEVICE_PRESET_DRAG_TYPE, preset.key);
+                  event.dataTransfer.effectAllowed = "copy";
+                }}
+                onClick={() => onAddPreset(preset.key)}
+                title="Drag onto the canvas, or click to add in the center"
+                className="flex w-full cursor-grab items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-emerald-300 hover:bg-emerald-50/50 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-950 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/20"
               >
-                {preset.name}
-              </span>
-              {presetCounts[preset.key] ? (
-                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                  {presetCounts[preset.key]} placed
+                <span className="flex min-w-0 items-center gap-2">
+                  {icon ? (
+                    <span
+                      className="h-6 w-6 shrink-0"
+                      style={{
+                        backgroundImage: `url(${icon})`,
+                        backgroundSize: "contain",
+                        backgroundRepeat: "no-repeat",
+                        backgroundPosition: "center",
+                      }}
+                    />
+                  ) : null}
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${PALETTE_COLORS[preset.key]}`}
+                  >
+                    {preset.name}
+                  </span>
                 </span>
-              ) : null}
-            </button>
-          ))}
+                {presetCounts[preset.key] ? (
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                    {presetCounts[preset.key]} placed
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
       </div>
 

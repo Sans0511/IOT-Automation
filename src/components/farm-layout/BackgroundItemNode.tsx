@@ -1,7 +1,16 @@
 "use client";
 
-import { Circle, Ellipse, Group, Line, Rect, Text } from "react-konva";
+import {
+  Circle,
+  Ellipse,
+  Group,
+  Image as KonvaImage,
+  Line,
+  Rect,
+  Text,
+} from "react-konva";
 import type Konva from "konva";
+import { useCanvasImage } from "./useCanvasImage";
 import {
   FARM_BACKGROUND_LABELS,
   FARM_CANVAS_HEIGHT,
@@ -40,6 +49,23 @@ export default function BackgroundItemNode({
   onAlignDrag: (id: string, x: number, y: number) => FarmPoint;
   onMove: (id: string, x: number, y: number) => void;
 }) {
+  const treeImage = useCanvasImage(
+    item.type === "TREE" ? "/background-items/coconut-tree.png" : null,
+  );
+  const appleTreeImage = useCanvasImage(
+    item.type === "APPLE_TREE" ? "/background-items/apple-tree.png" : null,
+  );
+  const mangoTreeImage = useCanvasImage(
+    item.type === "MANGO_TREE"
+      ? "/background-items/mango-tree-icon.svg"
+      : null,
+  );
+  const rosePlantImage = useCanvasImage(
+    item.type === "ROSE_PLANT"
+      ? "/background-items/rose-plant-icon.svg"
+      : null,
+  );
+
   function handleDragMove(event: Konva.KonvaEventObject<DragEvent>) {
     const aligned = onAlignDrag(item.id, event.target.x(), event.target.y());
     event.target.position(aligned);
@@ -81,12 +107,80 @@ export default function BackgroundItemNode({
       ) : null}
 
       {item.type === "TREE" ? (
-        <>
-          <Rect x={-5} y={2} width={10} height={30} fill="#8b5a2b" />
-          <Circle y={-8} radius={22} fill="#2f8f46" />
-          <Circle x={-14} y={2} radius={16} fill="#3aa653" />
-          <Circle x={14} y={0} radius={17} fill="#277c3b" />
-        </>
+        treeImage ? (
+          <KonvaImage
+            image={treeImage}
+            x={-36}
+            y={-40}
+            width={72}
+            height={72}
+          />
+        ) : (
+          <>
+            <Rect x={-5} y={2} width={10} height={30} fill="#8b5a2b" />
+            <Circle y={-8} radius={22} fill="#2f8f46" />
+            <Circle x={-14} y={2} radius={16} fill="#3aa653" />
+            <Circle x={14} y={0} radius={17} fill="#277c3b" />
+          </>
+        )
+      ) : null}
+
+      {item.type === "APPLE_TREE" ? (
+        appleTreeImage ? (
+          <KonvaImage
+            image={appleTreeImage}
+            x={-36}
+            y={-40}
+            width={72}
+            height={68}
+          />
+        ) : (
+          <>
+            <Rect x={-5} y={2} width={10} height={30} fill="#8b5a2b" />
+            <Circle y={-8} radius={22} fill="#2f8f46" />
+            <Circle x={-13} y={0} radius={5} fill="#ef4444" />
+            <Circle x={13} y={-4} radius={5} fill="#dc2626" />
+          </>
+        )
+      ) : null}
+
+      {item.type === "MANGO_TREE" ? (
+        mangoTreeImage ? (
+          <KonvaImage
+            image={mangoTreeImage}
+            x={-36}
+            y={-40}
+            width={72}
+            height={68}
+          />
+        ) : (
+          <>
+            <Rect x={-5} y={2} width={10} height={30} fill="#8b5a2b" />
+            <Circle y={-8} radius={22} fill="#2f8f46" />
+            <Circle x={-13} y={0} radius={5} fill="#fbbf24" />
+            <Circle x={13} y={-4} radius={5} fill="#f59e0b" />
+          </>
+        )
+      ) : null}
+
+      {item.type === "ROSE_PLANT" ? (
+        rosePlantImage ? (
+          <KonvaImage
+            image={rosePlantImage}
+            x={-36}
+            y={-40}
+            width={72}
+            height={68}
+          />
+        ) : (
+          <>
+            <Ellipse y={28} radiusX={24} radiusY={8} fill="#8b5a2b" />
+            <Line points={[0, 28, 0, -6]} stroke="#15803d" strokeWidth={4} />
+            <Circle x={-12} y={-4} radius={9} fill="#f43f5e" />
+            <Circle x={12} y={-8} radius={9} fill="#e11d48" />
+            <Circle y={4} radius={9} fill="#fb7185" />
+          </>
+        )
       ) : null}
 
       {item.type === "WATER_TANK" ? (
