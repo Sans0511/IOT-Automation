@@ -59,6 +59,10 @@ export function forbiddenResponse(message: string) {
   return NextResponse.json({ error: message }, { status: 403 });
 }
 
+export function conflictResponse(message: string) {
+  return NextResponse.json({ error: message }, { status: 409 });
+}
+
 export function serverErrorResponse(label: string, error: unknown) {
   console.error(`${label}:`, error);
   return NextResponse.json(
