@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Device {
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  type      String
+  status    DeviceStatus @default(OFFLINE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  readings  Reading[]
+
+  @@index([name])
+}
+
+model Reading {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  device     Device   @relation(fields: [deviceId], references: [id])
+  deviceId   String   @db.ObjectId
+  value      Float
+  recordedAt DateTime @default(now())
+
+  @@index([deviceId, recordedAt])
+}
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+  ERROR
+}
