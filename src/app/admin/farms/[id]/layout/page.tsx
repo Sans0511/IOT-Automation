@@ -1,10 +1,82 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { isObjectId } from "@/lib/api-helpers";
+import FarmLayoutEditor from "@/components/farm-layout/FarmLayoutEditor";
+import {
+  isObjectId,
+  isRecord,
+} from "@/lib/api-helpers";
+import {
+  createDefaultFarmLayout,
+  derivePresetDevices,
+  FARM_CANVAS_HEIGHT,
+  FARM_CANVAS_WIDTH,
+  FARM_LAYOUT_BACKGROUND,
+  isFarmDevicePresetKey,
+  parseFarmBackgroundItems,
+  parseFarmConnections,
+  type FarmLayoutData,
+  type FarmLayoutDevice,
+  type FarmLayoutPlacement,
+} from "@/lib/farm-layout";
 import { prisma } from "@/lib/prisma";
 
 export const instant = false;
+
+function clamp(value: number, max: number): number {
+  return Math.min(max, Math.max(0, Math.round(value)));
+}
+
+function readPlacements(
+  value: unknown,
+  allowedDeviceIds: Set<string>,
+): FarmLayoutPlacement[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const placements: FarmLayoutPlacement[] = [];
+
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const { deviceId, x, y, rotation, label, presetKey } = entry;
+    const isPreset = isFarmDevicePresetKey(presetKey);
+
+    if (
+      typeof deviceId !== "string" ||
+      !isObjectId(deviceId) ||
+      (!allowedDeviceIds.has(deviceId) && !isPreset) ||
+      seen.has(deviceId) ||
+      typeof x !== "number" ||
+      !Number.isFinite(x) ||
+      typeof y !== "number" ||
+      !Number.isFinite(y)
+    ) {
+      continue;
+    }
+
+    const normalizedRotation =
+      typeof rotation === "number" && Number.isFinite(rotation)
+        ? ((Math.round(rotation) % 360) + 360) % 360
+        : 0;
+
+    seen.add(deviceId);
+    placements.push({
+      deviceId,
+      x: clamp(x, FARM_CANVAS_WIDTH),
+      y: clamp(y, FARM_CANVAS_HEIGHT),
+      rotation: normalizedRotation,
+      label: typeof label === "string" && label.trim() ? label : null,
+      ...(isPreset ? { presetKey } : {}),
+    });
+  }
+
+  return placements;
+}
 
 export default async function FarmLayoutPage({
   params,
@@ -19,23 +91,56 @@ export default async function FarmLayoutPage({
     notFound();
   }
 
-  const farm = await prisma.farm.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      name: true,
-      location: true,
-      owner: { select: { name: true, email: true } },
-      devices: {
-        orderBy: { name: "asc" },
-        select: { id: true, name: true, type: true },
+  const [farm, savedLayout] = await Promise.all([
+    prisma.farm.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        location: true,
+        owner: { select: { name: true, email: true } },
+        devices: {
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, type: true },
+        },
       },
-    },
-  });
+    }),
+    prisma.farmLayout.findUnique({ where: { farmId: id } }),
+  ]);
 
   if (!farm) {
     notFound();
   }
+
+  const farmDevices: FarmLayoutDevice[] = farm.devices.map((device) => ({
+    id: device.id,
+    name: device.name,
+    type: device.type,
+  }));
+  const farmDeviceIds = new Set(farmDevices.map((device) => device.id));
+  const placements = savedLayout
+    ? readPlacements(savedLayout.placements, farmDeviceIds)
+    : [];
+  const devices = [...farmDevices, ...derivePresetDevices(placements, farmDevices)];
+  const connections = savedLayout
+    ? parseFarmConnections(savedLayout.connections) ?? []
+    : [];
+
+  const initialLayout: FarmLayoutData = savedLayout
+    ? {
+        id: savedLayout.id,
+        farmId: savedLayout.farmId,
+        width: savedLayout.width,
+        height: savedLayout.height,
+        backgroundKey: savedLayout.backgroundKey || FARM_LAYOUT_BACKGROUND,
+        placements,
+        backgroundItems:
+          parseFarmBackgroundItems(savedLayout.backgroundItems) ?? [],
+        connections,
+        version: savedLayout.version,
+        updatedAt: savedLayout.updatedAt.toISOString(),
+      }
+    : createDefaultFarmLayout(id);
 
   return (
     <div className="space-y-8">
@@ -76,73 +181,16 @@ export default async function FarmLayoutPage({
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <p className="text-sm text-slate-500 dark:text-slate-400">Devices</p>
           <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">
-            {farm.devices.length}
+            {devices.length}
           </p>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-              Layout canvas
-            </h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Arrange this farm’s devices on the layout grid.
-            </p>
-          </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-            Draft
-          </span>
-        </div>
-
-        <div className="mt-6 min-h-[420px] rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 dark:border-slate-700 dark:bg-slate-950/40">
-          <div className="flex min-h-[370px] items-center justify-center">
-            <div className="text-center">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                className="mx-auto h-10 w-10 text-slate-400 dark:text-slate-500"
-              >
-                <path
-                  d="M4 4h6v6H4V4ZM14 4h6v6h-6V4ZM4 14h6v6H4v-6ZM14 14h6v6h-6v-6Z"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <p className="mt-4 font-medium text-slate-700 dark:text-slate-200">
-                Layout editor is ready
-              </p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Device placement and saving can be added here.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-            Devices for this farm
-          </h3>
-          {farm.devices.length ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {farm.devices.map((device) => (
-                <span
-                  key={device.id}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                >
-                  {device.name} · {device.type}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-              No devices are assigned to this farm yet.
-            </p>
-          )}
-        </div>
-      </section>
+      <FarmLayoutEditor
+        farmId={farm.id}
+        devices={devices}
+        initialLayout={initialLayout}
+      />
     </div>
   );
 }
