@@ -1,10 +1,11 @@
-import { Prisma } from "@prisma/client";
+import { DeviceType, Prisma } from "@prisma/client";
 import { NextResponse, type NextRequest } from "next/server";
 import { getAuthenticatedUser } from "@/lib/api-auth";
 import {
   badRequestResponse,
   conflictResponse,
   forbiddenResponse,
+  isDeviceType,
   isObjectId,
   isRecord,
   notFoundResponse,
@@ -15,6 +16,7 @@ import {
 import {
   createDefaultFarmLayout,
   FARM_CANVAS_HEIGHT,
+  FARM_DEVICE_PRESET_LABELS,
   FARM_CANVAS_WIDTH,
   FARM_LAYOUT_BACKGROUND,
   isFarmDevicePresetKey,
@@ -22,6 +24,7 @@ import {
   parseFarmConnections,
   type FarmLayoutConnection,
   type FarmLayoutData,
+  type FarmLayoutDevice,
   type FarmLayoutPlacement,
 } from "@/lib/farm-layout";
 import { prisma } from "@/lib/prisma";
@@ -31,6 +34,23 @@ interface RouteParams {
 }
 
 class LayoutVersionConflict extends Error {}
+
+function remapConnectionDeviceIds(
+  connection: FarmLayoutConnection,
+  deviceIdMap: Map<string, string>,
+): FarmLayoutConnection {
+  const next = { ...connection };
+
+  if (next.fromDeviceId) {
+    next.fromDeviceId = deviceIdMap.get(next.fromDeviceId) ?? next.fromDeviceId;
+  }
+
+  if (next.toDeviceId) {
+    next.toDeviceId = deviceIdMap.get(next.toDeviceId) ?? next.toDeviceId;
+  }
+
+  return next;
+}
 
 function clamp(value: number, max: number): number {
   return Math.min(max, Math.max(0, Math.round(value)));
@@ -266,6 +286,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     return badRequestResponse("A valid JSON body is required");
   }
 
+  const publish = body.publish === true;
+
   const placements = parsePlacements(body.placements);
 
   if (!placements) {
@@ -325,6 +347,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    if (
+      publish &&
+      placements.some(
+        (placement) =>
+          placement.presetKey && !isDeviceType(placement.presetKey),
+      )
+    ) {
+      return badRequestResponse("Unsupported device type in layout");
+    }
+
     const placedIds = new Set(placements.map((placement) => placement.deviceId));
     const backgroundItemIds = new Set(
       backgroundItems.map((item) => item.id),
@@ -354,55 +386,131 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const layout = await prisma.$transaction(async (tx) => {
-      const existing = await tx.farmLayout.findUnique({
-        where: { farmId: id },
-        select: { version: true },
-      });
-      const currentVersion = existing?.version ?? 0;
+    const publishedDevices: FarmLayoutDevice[] = [];
 
-      if (expectedVersion !== currentVersion) {
-        throw new LayoutVersionConflict();
-      }
+    const { layout, publishedDeviceList } = await prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.farmLayout.findUnique({
+          where: { farmId: id },
+          select: { version: true },
+        });
+        const currentVersion = existing?.version ?? 0;
 
-      return tx.farmLayout.upsert({
-        where: { farmId: id },
-        create: {
-          farmId: id,
-          width: FARM_CANVAS_WIDTH,
-          height: FARM_CANVAS_HEIGHT,
-          backgroundKey,
-          placements: placements as unknown as Prisma.InputJsonValue,
-          backgroundItems: backgroundItems as unknown as Prisma.InputJsonValue,
-          connections: connections as unknown as Prisma.InputJsonValue,
-          version: currentVersion + 1,
-        },
-        update: {
-          width: FARM_CANVAS_WIDTH,
-          height: FARM_CANVAS_HEIGHT,
-          backgroundKey,
-          placements: placements as unknown as Prisma.InputJsonValue,
-          backgroundItems: backgroundItems as unknown as Prisma.InputJsonValue,
-          connections: connections as unknown as Prisma.InputJsonValue,
-          version: { increment: 1 },
-        },
-        select: {
-          id: true,
-          farmId: true,
-          width: true,
-          height: true,
-          backgroundKey: true,
-          placements: true,
-          backgroundItems: true,
-          connections: true,
-          version: true,
-          updatedAt: true,
-        },
-      });
-    });
+        if (expectedVersion !== currentVersion) {
+          throw new LayoutVersionConflict();
+        }
+
+        const deviceIdMap = new Map<string, string>();
+        const publishedDeviceList: FarmLayoutDevice[] = [];
+
+        if (publish) {
+          for (const placement of placements) {
+            if (!placement.presetKey) {
+              continue;
+            }
+
+            const existingDevice = await tx.device.findUnique({
+              where: { id: placement.deviceId },
+              select: { id: true },
+            });
+
+            if (existingDevice) {
+              continue;
+            }
+
+            const device = await tx.device.create({
+              data: {
+                farmId: id,
+                name:
+                  placement.label ??
+                  FARM_DEVICE_PRESET_LABELS[
+                    placement.presetKey as keyof typeof FARM_DEVICE_PRESET_LABELS
+                  ],
+                type: placement.presetKey as DeviceType,
+              },
+              select: { id: true, name: true, type: true },
+            });
+
+            deviceIdMap.set(placement.deviceId, device.id);
+            publishedDeviceList.push({
+              id: device.id,
+              name: device.name,
+              type: device.type,
+            });
+          }
+        }
+
+        const publishedPlacements = placements.map((placement) => {
+          const deviceId =
+            deviceIdMap.get(placement.deviceId) ?? placement.deviceId;
+
+          if (deviceId === placement.deviceId) {
+            return placement;
+          }
+
+          return {
+            deviceId,
+            x: placement.x,
+            y: placement.y,
+            rotation: placement.rotation,
+            label: placement.label,
+          };
+        });
+        const publishedConnections = connections.map((connection) =>
+          remapConnectionDeviceIds(connection, deviceIdMap),
+        );
+
+        const layout = await tx.farmLayout.upsert({
+          where: { farmId: id },
+          create: {
+            farmId: id,
+            width: FARM_CANVAS_WIDTH,
+            height: FARM_CANVAS_HEIGHT,
+            backgroundKey,
+            placements: publishedPlacements as unknown as Prisma.InputJsonValue,
+            backgroundItems:
+              backgroundItems as unknown as Prisma.InputJsonValue,
+            connections: publishedConnections as unknown as Prisma.InputJsonValue,
+            version: currentVersion + 1,
+          },
+          update: {
+            width: FARM_CANVAS_WIDTH,
+            height: FARM_CANVAS_HEIGHT,
+            backgroundKey,
+            placements: publishedPlacements as unknown as Prisma.InputJsonValue,
+            backgroundItems:
+              backgroundItems as unknown as Prisma.InputJsonValue,
+            connections: publishedConnections as unknown as Prisma.InputJsonValue,
+            version: { increment: 1 },
+          },
+          select: {
+            id: true,
+            farmId: true,
+            width: true,
+            height: true,
+            backgroundKey: true,
+            placements: true,
+            backgroundItems: true,
+            connections: true,
+            version: true,
+            updatedAt: true,
+          },
+        });
+
+        return { layout, publishedDeviceList };
+      },
+    );
+
+    publishedDevices.push(...publishedDeviceList);
+
+    const responseDeviceIds = new Set([
+      ...allowedDeviceIds,
+      ...publishedDevices.map((device) => device.id),
+    ]);
 
     return NextResponse.json({
-      layout: serializeLayout(layout, allowedDeviceIds),
+      layout: serializeLayout(layout, responseDeviceIds),
+      publishedDevices,
     });
   } catch (error) {
     if (error instanceof LayoutVersionConflict) {

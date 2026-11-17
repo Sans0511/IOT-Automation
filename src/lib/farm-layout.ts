@@ -12,6 +12,8 @@ export const FARM_BACKGROUND_ITEM_TYPES = [
   "MANGO_TREE",
   "ROSE_PLANT",
   "WATER_TANK",
+  "SPRINKLER_LINE",
+  "DELIVERY_POINT",
   "POND",
   "SHED",
   "FLOWER_BED",
@@ -30,14 +32,11 @@ export type FarmLayoutBackgroundItem = {
 };
 
 export const FARM_DEVICE_PRESET_LABELS = {
-  WATER_TANK: "Water Tank",
   MOTOR_PUMP: "Motor Pump",
   SOLENOID_VALVE: "Solenoid Valve",
   MOISTURE_SENSOR: "Moisture Sensor",
   RAIN_DETECTION: "Rain Detection",
-  SPRINKLER_LINE: "Sprinkler Line",
   SMART_IRRIGATION_CONTROLLER: "Smart Irrigation Controller",
-  DELIVERY_POINT: "Delivery Point",
 } as const;
 
 export type FarmDevicePresetKey = keyof typeof FARM_DEVICE_PRESET_LABELS;
@@ -117,6 +116,8 @@ export const FARM_BACKGROUND_LABELS: Record<FarmBackgroundItemType, string> = {
   MANGO_TREE: "Mango tree",
   ROSE_PLANT: "Rose plant",
   WATER_TANK: "Water tank",
+  SPRINKLER_LINE: "Sprinkler line",
+  DELIVERY_POINT: "Delivery point",
   POND: "Pond",
   SHED: "Shed",
   FLOWER_BED: "Flower bed",

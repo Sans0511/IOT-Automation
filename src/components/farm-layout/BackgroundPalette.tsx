@@ -24,6 +24,10 @@ const ITEM_STYLES: Record<FarmBackgroundItemType, string> = {
     "bg-pink-100 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300",
   WATER_TANK:
     "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+  SPRINKLER_LINE:
+    "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+  DELIVERY_POINT:
+    "bg-lime-100 text-lime-700 dark:bg-lime-950/40 dark:text-lime-300",
   POND: "bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300",
   SHED: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
   FLOWER_BED:

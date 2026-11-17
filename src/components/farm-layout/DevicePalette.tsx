@@ -17,25 +17,15 @@ const PALETTE_COLORS: Record<string, string> = {
   PUMP: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
   WEATHER_STATION:
     "bg-teal-100 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300",
-  WATER_TANK:
-    "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
   MOTOR_PUMP:
     "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
   SOLENOID_VALVE:
     "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300",
   RAIN_DETECTION:
     "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
-  SPRINKLER_LINE:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
   SMART_IRRIGATION_CONTROLLER:
     "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300",
-  DELIVERY_POINT:
-    "bg-lime-100 text-lime-700 dark:bg-lime-950/40 dark:text-lime-300",
 };
-
-const PRESET_KEYS = new Set<string>(
-  FARM_DEVICE_PRESETS.map((preset) => preset.key),
-);
 
 const PRESET_ICONS: Partial<Record<FarmDevicePresetKey, string>> = {
   MOTOR_PUMP: "/background-items/motor-pump-icon.svg",
@@ -59,6 +49,11 @@ export default function DevicePalette({
 }) {
   const [search, setSearch] = useState("");
   const placedIds = new Set(placements.map((placement) => placement.deviceId));
+  const presetDeviceIds = new Set(
+    placements
+      .filter((placement) => placement.presetKey)
+      .map((placement) => placement.deviceId),
+  );
   const presetCounts = placements.reduce<Record<string, number>>(
     (counts, placement) => {
       if (placement.presetKey) {
@@ -70,7 +65,7 @@ export default function DevicePalette({
   );
   const visibleDevices = devices.filter(
     (device) =>
-      !PRESET_KEYS.has(device.type) &&
+      !presetDeviceIds.has(device.id) &&
       device.name.toLowerCase().includes(search.trim().toLowerCase()),
   );
 

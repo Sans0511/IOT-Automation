@@ -256,6 +256,27 @@ export default function BackgroundItemNode({
         </>
       ) : null}
 
+      {item.type === "SPRINKLER_LINE" ? (
+        <>
+          <Line points={[-38, 10, 38, 10]} stroke="#059669" strokeWidth={5} />
+          <Line points={[-28, 10, -28, -2]} stroke="#059669" strokeWidth={3} />
+          <Line points={[0, 10, 0, -2]} stroke="#059669" strokeWidth={3} />
+          <Line points={[28, 10, 28, -2]} stroke="#059669" strokeWidth={3} />
+          <Circle x={-28} y={-6} radius={4} fill="#38bdf8" />
+          <Circle x={0} y={-6} radius={4} fill="#38bdf8" />
+          <Circle x={28} y={-6} radius={4} fill="#38bdf8" />
+        </>
+      ) : null}
+
+      {item.type === "DELIVERY_POINT" ? (
+        <>
+          <Rect x={-5} y={-1} width={10} height={28} fill="#78350f" cornerRadius={2} />
+          <Circle y={-12} radius={14} fill="#65a30d" />
+          <Circle x={-14} y={-2} radius={11} fill="#65a30d" />
+          <Circle x={14} y={-2} radius={11} fill="#65a30d" />
+        </>
+      ) : null}
+
       {item.type === "FLOWER_BED" ? (
         <>
           <Rect

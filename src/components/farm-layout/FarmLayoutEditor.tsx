@@ -107,6 +107,10 @@ export default function FarmLayoutEditor({
   const [clipboard, setClipboard] = useState<LayoutClipboard | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishedDevices, setPublishedDevices] = useState<
+    FarmLayoutDevice[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [snapToGrid, setSnapToGrid] = useState(true);
@@ -128,8 +132,8 @@ export default function FarmLayoutEditor({
   }, [isDirty]);
 
   const allDevices = useMemo(
-    () => [...devices, ...presetDevices],
-    [devices, presetDevices],
+    () => [...devices, ...publishedDevices, ...presetDevices],
+    [devices, publishedDevices, presetDevices],
   );
   const devicesById = useMemo(
     () => new Map(allDevices.map((device) => [device.id, device])),
@@ -854,6 +858,19 @@ export default function FarmLayoutEditor({
     }
   }
 
+  function buildLayoutPayload(publish = false) {
+    return {
+      version: layout.version,
+      backgroundKey: layout.backgroundKey,
+      width: layout.width,
+      height: layout.height,
+      placements: layout.placements,
+      backgroundItems: layout.backgroundItems,
+      connections: layout.connections,
+      ...(publish ? { publish: true } : {}),
+    };
+  }
+
   async function handleSave() {
     console.log("[FarmLayoutEditor] Saving layout", {
       farmId,
@@ -870,15 +887,7 @@ export default function FarmLayoutEditor({
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            version: layout.version,
-            backgroundKey: layout.backgroundKey,
-            width: layout.width,
-            height: layout.height,
-            placements: layout.placements,
-            backgroundItems: layout.backgroundItems,
-            connections: layout.connections,
-          }),
+          body: JSON.stringify(buildLayoutPayload()),
         },
       );
       const data = (await response.json()) as {
@@ -902,6 +911,66 @@ export default function FarmLayoutEditor({
       setError("Network error while saving layout");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handlePublish() {
+    const presetCount = layout.placements.filter(
+      (placement) => placement.presetKey,
+    ).length;
+    const confirmMessage = presetCount
+      ? `Publish ${presetCount} layout device(s) to this farm?`
+      : "Publish this layout?";
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setPublishing(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetchWithSessionRetry(
+        `/api/admin/farms/${farmId}/layout`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildLayoutPayload(true)),
+        },
+      );
+      const data = (await response.json()) as {
+        layout?: FarmLayoutData;
+        publishedDevices?: FarmLayoutDevice[];
+        error?: string;
+      };
+
+      if (!response.ok || !data.layout) {
+        setError(
+          response.status === 401
+            ? "Your session expired. Please sign in again."
+            : (data.error ?? "Unable to publish layout"),
+        );
+        return;
+      }
+
+      const newDevices = data.publishedDevices ?? [];
+      const realDevices = [...devices, ...publishedDevices, ...newDevices];
+
+      setPublishedDevices(realDevices.filter((device) => !devices.some((existing) => existing.id === device.id)));
+      setPresetDevices(derivePresetDevices(data.layout.placements, realDevices));
+      setLayout(data.layout);
+      handleSelectDevice(null);
+      setIsDirty(false);
+      setMessage(
+        newDevices.length
+          ? `Published ${newDevices.length} device(s) to this farm.`
+          : "Layout published successfully.",
+      );
+    } catch {
+      setError("Network error while publishing layout");
+    } finally {
+      setPublishing(false);
     }
   }
 
@@ -929,7 +998,12 @@ export default function FarmLayoutEditor({
       }
 
       setLayout(data.layout);
-      setPresetDevices(derivePresetDevices(data.layout.placements, devices));
+      setPresetDevices(
+        derivePresetDevices(data.layout.placements, [
+          ...devices,
+          ...publishedDevices,
+        ]),
+      );
       handleSelectDevice(null);
       setLinkMode(false);
       setLinkSource(null);
@@ -1141,6 +1215,14 @@ export default function FarmLayoutEditor({
               className="rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
             >
               Reset
+            </button>
+            <button
+              type="button"
+              onClick={() => void handlePublish()}
+              disabled={saving || publishing}
+              className="rounded-lg border border-emerald-300 px-4 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+            >
+              {publishing ? "Publishing..." : "Publish"}
             </button>
             <button
               type="button"

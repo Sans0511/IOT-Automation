@@ -85,13 +85,10 @@ const DEVICE_COLORS: Record<string, string> = {
   MOISTURE_SENSOR: "#0ea5e9",
   PUMP: "#8b5cf6",
   WEATHER_STATION: "#14b8a6",
-  WATER_TANK: "#0284c7",
   MOTOR_PUMP: "#7c3aed",
   SOLENOID_VALVE: "#ea580c",
   RAIN_DETECTION: "#0ea5e9",
-  SPRINKLER_LINE: "#059669",
   SMART_IRRIGATION_CONTROLLER: "#4f46e5",
-  DELIVERY_POINT: "#65a30d",
 };
 
 function clamp(value: number, max: number): number {
@@ -112,16 +109,11 @@ function getDevicePorts(type: string): FarmDevicePort[] {
   }
 
   if (
-    type === "WATER_TANK" ||
     type === "PUMP" ||
     type === "MOTOR_PUMP" ||
     type === "SMART_IRRIGATION_CONTROLLER"
   ) {
     return ["outlet"];
-  }
-
-  if (type === "DELIVERY_POINT") {
-    return ["inlet"];
   }
 
   return [];
@@ -253,21 +245,6 @@ function DeviceNode({
           <Rect x={-4} y={-11} width={8} height={22} fill={color} cornerRadius={3} />
         </>
       ) : null}
-      {device.type === "WATER_TANK" ? (
-        <>
-          <Rect x={-12} y={-10} width={24} height={20} fill={color} cornerRadius={4} />
-          <Line points={[-12, -3, 12, -3]} stroke="#ffffff" strokeWidth={2} />
-          <Line points={[-7, -14, 7, -14]} stroke={color} strokeWidth={3} />
-        </>
-      ) : null}
-      {device.type === "SPRINKLER_LINE" ? (
-        <>
-          <Line points={[-14, 8, 14, 8]} stroke={color} strokeWidth={4} />
-          <Line points={[-10, 8, -13, -6]} stroke={color} strokeWidth={3} />
-          <Line points={[0, 8, 0, -8]} stroke={color} strokeWidth={3} />
-          <Line points={[10, 8, 13, -6]} stroke={color} strokeWidth={3} />
-        </>
-      ) : null}
       {device.type === "SMART_IRRIGATION_CONTROLLER" ? (
         <>
           <Rect x={-14} y={-10} width={28} height={22} fill={color} cornerRadius={4} />
@@ -321,14 +298,6 @@ function DeviceNode({
           <Line points={[0, 12, 0, -8]} stroke={color} strokeWidth={4} />
           <Line points={[-10, -7, 10, -7]} stroke={color} strokeWidth={4} />
           <Line points={[-7, -1, 7, -1]} stroke={color} strokeWidth={4} />
-        </>
-      ) : null}
-      {device.type === "DELIVERY_POINT" ? (
-        <>
-          <Rect x={-3} y={-1} width={6} height={15} fill="#78350f" cornerRadius={2} />
-          <Circle y={-5} radius={12} fill={color} />
-          <Circle x={-8} y={4} radius={9} fill={color} />
-          <Circle x={8} y={4} radius={9} fill={color} />
         </>
       ) : null}
        {getDevicePorts(device.type).map((port) => {
