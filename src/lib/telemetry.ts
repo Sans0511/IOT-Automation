@@ -158,6 +158,49 @@ export function getDeviceRuntimeStatus(
   return { state: "NO DATA", active: false, stale: false, online: false };
 }
 
+const MOISTURE_PAYLOAD_KEYS = [
+  "moisture",
+  "soilMoisture",
+  "soil_moisture",
+  "moistureLevel",
+  "moisture_level",
+  "moisturePercent",
+  "moisture_percent",
+  "percentage",
+  "value",
+];
+
+export function getMoisturePercent(
+  envelope: DeviceMessageEnvelope | null | undefined,
+  now = Date.now(),
+): number | null {
+  if (!envelope || envelope.kind !== "telemetry") {
+    return null;
+  }
+
+  const receivedAt = Date.parse(envelope.receivedAt);
+
+  if (!Number.isNaN(receivedAt) && now - receivedAt > DEVICE_STATUS_FRESH_MS) {
+    return null;
+  }
+
+  for (const key of MOISTURE_PAYLOAD_KEYS) {
+    const raw = envelope.payload[key];
+    const value =
+      typeof raw === "number"
+        ? raw
+        : typeof raw === "string" && raw.trim() !== ""
+          ? Number(raw)
+          : Number.NaN;
+
+    if (Number.isFinite(value)) {
+      return Math.min(100, Math.max(0, Math.round(value)));
+    }
+  }
+
+  return null;
+}
+
 export function parseDeviceMessageEnvelope(
   value: string,
 ): DeviceMessageEnvelope | null {

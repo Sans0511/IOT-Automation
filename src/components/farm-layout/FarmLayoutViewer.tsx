@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { isControllableDeviceType } from "@/lib/device-control";
 import {
   getDeviceRuntimeStatus,
+  getMoisturePercent,
   type DeviceMessageEnvelope,
   type DeviceRuntimeState,
   type DeviceRuntimeStatus,
@@ -38,6 +39,7 @@ type ViewerProps = {
   layout: FarmLayoutData;
   devices: FarmLayoutDevice[];
   statuses: StatusMap;
+  telemetry: StatusMap;
   onDeviceDoubleClick?: (device: FarmLayoutDevice) => void;
 };
 
@@ -717,6 +719,7 @@ export default function FarmLayoutViewer({
   layout,
   devices,
   statuses,
+  telemetry,
   onDeviceDoubleClick,
 }: ViewerProps) {
   const placementsById = useMemo(
@@ -993,6 +996,10 @@ export default function FarmLayoutViewer({
         const label = deviceLabel(placement, devicesById);
         const runtime = runtimeByDevice.get(placement.deviceId);
         const runtimeState = runtime?.state ?? "NO DATA";
+        const moisture =
+          type === "MOISTURE_SENSOR"
+            ? getMoisturePercent(telemetry[placement.deviceId])
+            : null;
         const controllable = device
           ? isControllableDeviceType(device.type)
           : false;
@@ -1055,6 +1062,14 @@ export default function FarmLayoutViewer({
             >
               {runtimeState}
             </span>
+            {moisture !== null ? (
+              <span
+                className="mt-1 rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm"
+                title="Soil moisture"
+              >
+                {moisture}%
+              </span>
+            ) : null}
           </div>
         );
       })}

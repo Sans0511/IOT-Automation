@@ -185,6 +185,24 @@ async function handleConnection(
           }
         }
       }
+
+      const telemetryKeys = devices.map((device) =>
+        deviceMessageKey(farmId, device.id, "telemetry"),
+      );
+
+      if (telemetryKeys.length > 0) {
+        const cachedTelemetry = await redis.mGet(telemetryKeys);
+
+        for (const cached of cachedTelemetry) {
+          const snapshot = cached
+            ? parseDeviceMessageEnvelope(cached)
+            : null;
+
+          if (snapshot) {
+            sendFrame(socket, { type: "telemetry", data: snapshot });
+          }
+        }
+      }
     } else {
       const cachedStatus = await redis.get(
         deviceMessageKey(farmId, deviceId, "status"),

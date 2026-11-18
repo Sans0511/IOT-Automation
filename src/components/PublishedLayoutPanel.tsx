@@ -38,6 +38,9 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
   const [statuses, setStatuses] = useState<StatusMap>(
     () => farm?.statuses ?? {},
   );
+  const [telemetry, setTelemetry] = useState<StatusMap>(
+    () => farm?.telemetry ?? {},
+  );
   const [statusConnection, setStatusConnection] =
     useState<StatusConnectionState>("connecting");
   const [pendingCommand, setPendingCommand] =
@@ -101,7 +104,7 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
         }
 
         if (
-          candidate.type !== "status" ||
+          (candidate.type !== "status" && candidate.type !== "telemetry") ||
           typeof candidate.data !== "object" ||
           candidate.data === null
         ) {
@@ -112,14 +115,24 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
           JSON.stringify(candidate.data),
         );
 
-        if (!envelope || envelope.farmId !== farmId) {
+        if (
+          !envelope ||
+          envelope.farmId !== farmId ||
+          envelope.kind !== candidate.type
+        ) {
           return;
         }
 
-        setStatuses((current) => ({
+        const update = (current: StatusMap) => ({
           ...current,
           [envelope.deviceId]: envelope,
-        }));
+        });
+
+        if (candidate.type === "status") {
+          setStatuses(update);
+        } else {
+          setTelemetry(update);
+        }
       } catch {
         return;
       }
@@ -308,6 +321,7 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
             layout={farm.layout}
             devices={farm.devices}
             statuses={statuses}
+            telemetry={telemetry}
             onDeviceDoubleClick={handleDeviceDoubleClick}
           />
         ) : (

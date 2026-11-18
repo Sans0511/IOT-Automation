@@ -17,6 +17,7 @@ import {
   deviceMessageKey,
   parseDeviceMessageEnvelope,
   type DeviceMessageEnvelope,
+  type DeviceMessageKind,
 } from "@/lib/telemetry";
 import { isObjectId, isRecord } from "@/lib/api-helpers";
 
@@ -27,6 +28,7 @@ export type PublishedFarm = {
   devices: FarmLayoutDevice[];
   layout: FarmLayoutData;
   statuses: Record<string, DeviceMessageEnvelope>;
+  telemetry: Record<string, DeviceMessageEnvelope>;
 };
 
 type StoredLayout = {
@@ -182,9 +184,10 @@ function serializeLayout(layout: StoredLayout): FarmLayoutData {
   };
 }
 
-async function getDeviceStatuses(
+async function getDeviceMessages(
   farmId: string,
   deviceIds: string[],
+  kind: DeviceMessageKind,
 ): Promise<Record<string, DeviceMessageEnvelope>> {
   if (deviceIds.length === 0) {
     return {};
@@ -193,25 +196,23 @@ async function getDeviceStatuses(
   try {
     const redis = await getRedis();
     const cached = await redis.mGet(
-      deviceIds.map((deviceId) =>
-        deviceMessageKey(farmId, deviceId, "status"),
-      ),
+      deviceIds.map((deviceId) => deviceMessageKey(farmId, deviceId, kind)),
     );
-    const statuses: Record<string, DeviceMessageEnvelope> = {};
+    const messages: Record<string, DeviceMessageEnvelope> = {};
 
     deviceIds.forEach((deviceId, index) => {
       const value = cached[index];
       const envelope = value ? parseDeviceMessageEnvelope(value) : null;
 
       if (envelope) {
-        statuses[deviceId] = envelope;
+        messages[deviceId] = envelope;
       }
     });
 
-    return statuses;
+    return messages;
   } catch (error) {
     console.error(
-      "Load device statuses failed:",
+      `Load device ${kind} failed:`,
       error instanceof Error ? error.message : String(error),
     );
     return {};
@@ -257,9 +258,15 @@ export async function getPublishedLayoutsByEmail(email: string): Promise<{
         location: farm.location,
         devices: farm.devices,
         layout: serializeLayout(farm.layout as StoredLayout),
-        statuses: await getDeviceStatuses(
+        statuses: await getDeviceMessages(
           farm.id,
           farm.devices.map((device) => device.id),
+          "status",
+        ),
+        telemetry: await getDeviceMessages(
+          farm.id,
+          farm.devices.map((device) => device.id),
+          "telemetry",
         ),
       })),
   );
