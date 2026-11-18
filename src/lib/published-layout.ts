@@ -28,7 +28,6 @@ export type PublishedFarm = {
   devices: FarmLayoutDevice[];
   layout: FarmLayoutData;
   statuses: Record<string, DeviceMessageEnvelope>;
-  telemetry: Record<string, DeviceMessageEnvelope>;
 };
 
 type StoredLayout = {
@@ -262,11 +261,6 @@ export async function getPublishedLayoutsByEmail(email: string): Promise<{
           farm.id,
           farm.devices.map((device) => device.id),
           "status",
-        ),
-        telemetry: await getDeviceMessages(
-          farm.id,
-          farm.devices.map((device) => device.id),
-          "telemetry",
         ),
       })),
   );

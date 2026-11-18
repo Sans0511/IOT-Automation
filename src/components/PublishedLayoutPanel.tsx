@@ -16,6 +16,7 @@ import type { PublishedFarm } from "@/lib/published-layout";
 import {
   getDeviceRuntimeStatus,
   parseDeviceMessageEnvelope,
+  resolveDeviceRuntimeStatus,
   type DeviceMessageEnvelope,
 } from "@/lib/telemetry";
 
@@ -38,9 +39,7 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
   const [statuses, setStatuses] = useState<StatusMap>(
     () => farm?.statuses ?? {},
   );
-  const [telemetry, setTelemetry] = useState<StatusMap>(
-    () => farm?.telemetry ?? {},
-  );
+  const [telemetry, setTelemetry] = useState<StatusMap>({});
   const [statusConnection, setStatusConnection] =
     useState<StatusConnectionState>("connecting");
   const [pendingCommand, setPendingCommand] =
@@ -149,10 +148,14 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
       new Map(
         (devices ?? []).map((device) => [
           device.id,
-          getDeviceRuntimeStatus(statuses[device.id], device.type),
+          resolveDeviceRuntimeStatus(
+            device.type,
+            statuses[device.id],
+            telemetry[device.id],
+          ),
         ]),
       ),
-    [devices, statuses],
+    [devices, statuses, telemetry],
   );
   const activeCount = useMemo(
     () =>

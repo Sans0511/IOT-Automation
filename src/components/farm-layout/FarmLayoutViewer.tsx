@@ -3,8 +3,8 @@
 import { useMemo } from "react";
 import { isControllableDeviceType } from "@/lib/device-control";
 import {
-  getDeviceRuntimeStatus,
   getMoisturePercent,
+  resolveDeviceRuntimeStatus,
   type DeviceMessageEnvelope,
   type DeviceRuntimeState,
   type DeviceRuntimeStatus,
@@ -811,10 +811,14 @@ export default function FarmLayoutViewer({
       new Map(
         devices.map((device) => [
           device.id,
-          getDeviceRuntimeStatus(statuses[device.id], device.type),
+          resolveDeviceRuntimeStatus(
+            device.type,
+            statuses[device.id],
+            telemetry[device.id],
+          ),
         ]),
       ),
-    [devices, statuses],
+    [devices, statuses, telemetry],
   );
   const flowStates = useMemo(
     () =>

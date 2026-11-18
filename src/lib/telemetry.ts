@@ -88,6 +88,14 @@ function stateActiveValue(state: string): boolean | null {
   return null;
 }
 
+export function isSensorDeviceType(deviceType: string): boolean {
+  return (
+    deviceType === "SENSOR" ||
+    deviceType === "MOISTURE_SENSOR" ||
+    deviceType.endsWith("_SENSOR")
+  );
+}
+
 export function getDeviceRuntimeStatus(
   envelope: DeviceMessageEnvelope | null | undefined,
   deviceType: string,
@@ -127,6 +135,21 @@ export function getDeviceRuntimeStatus(
     return { state: "OFFLINE", active: false, stale: false, online: false };
   }
 
+  if (state === "STALE") {
+    return { state: "STALE", active: false, stale: true, online: false };
+  }
+
+  if (
+    isSensorDeviceType(deviceType) &&
+    (envelope.kind === "telemetry" ||
+      explicitOnline === true ||
+      state === "ONLINE" ||
+      state === "RUNNING" ||
+      state === "ACTIVE")
+  ) {
+    return { state: "RUNNING", active: true, stale: false, online: true };
+  }
+
   if (hasActiveValue && active) {
     return {
       state:
@@ -156,6 +179,26 @@ export function getDeviceRuntimeStatus(
   }
 
   return { state: "NO DATA", active: false, stale: false, online: false };
+}
+
+export function resolveDeviceRuntimeStatus(
+  deviceType: string,
+  status: DeviceMessageEnvelope | null | undefined,
+  telemetry: DeviceMessageEnvelope | null | undefined,
+): DeviceRuntimeStatus {
+  let message = status;
+
+  if (isSensorDeviceType(deviceType) && telemetry) {
+    const statusRuntime = status
+      ? getDeviceRuntimeStatus(status, deviceType)
+      : null;
+
+    if (statusRuntime?.state !== "OFFLINE") {
+      message = telemetry;
+    }
+  }
+
+  return getDeviceRuntimeStatus(message, deviceType);
 }
 
 const MOISTURE_PAYLOAD_KEYS = [

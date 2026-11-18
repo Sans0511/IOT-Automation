@@ -185,24 +185,6 @@ async function handleConnection(
           }
         }
       }
-
-      const telemetryKeys = devices.map((device) =>
-        deviceMessageKey(farmId, device.id, "telemetry"),
-      );
-
-      if (telemetryKeys.length > 0) {
-        const cachedTelemetry = await redis.mGet(telemetryKeys);
-
-        for (const cached of cachedTelemetry) {
-          const snapshot = cached
-            ? parseDeviceMessageEnvelope(cached)
-            : null;
-
-          if (snapshot) {
-            sendFrame(socket, { type: "telemetry", data: snapshot });
-          }
-        }
-      }
     } else {
       const cachedStatus = await redis.get(
         deviceMessageKey(farmId, deviceId, "status"),
@@ -213,17 +195,6 @@ async function handleConnection(
 
       if (statusSnapshot) {
         sendFrame(socket, { type: "status", data: statusSnapshot });
-      }
-
-      const cachedTelemetry = await redis.get(
-        deviceMessageKey(farmId, deviceId, "telemetry"),
-      );
-      const telemetrySnapshot = cachedTelemetry
-        ? parseDeviceMessageEnvelope(cachedTelemetry)
-        : null;
-
-      if (telemetrySnapshot) {
-        sendFrame(socket, { type: "telemetry", data: telemetrySnapshot });
       }
     }
 
