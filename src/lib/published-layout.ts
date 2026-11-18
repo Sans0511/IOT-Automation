@@ -12,6 +12,12 @@ import {
   type FarmLayoutPlacement,
 } from "@/lib/farm-layout";
 import { prisma } from "@/lib/prisma";
+import { getRedis } from "@/lib/redis";
+import {
+  deviceMessageKey,
+  parseDeviceMessageEnvelope,
+  type DeviceMessageEnvelope,
+} from "@/lib/telemetry";
 import { isObjectId, isRecord } from "@/lib/api-helpers";
 
 export type PublishedFarm = {
@@ -20,6 +26,7 @@ export type PublishedFarm = {
   location: string;
   devices: FarmLayoutDevice[];
   layout: FarmLayoutData;
+  statuses: Record<string, DeviceMessageEnvelope>;
 };
 
 type StoredLayout = {
@@ -175,6 +182,42 @@ function serializeLayout(layout: StoredLayout): FarmLayoutData {
   };
 }
 
+async function getDeviceStatuses(
+  farmId: string,
+  deviceIds: string[],
+): Promise<Record<string, DeviceMessageEnvelope>> {
+  if (deviceIds.length === 0) {
+    return {};
+  }
+
+  try {
+    const redis = await getRedis();
+    const cached = await redis.mGet(
+      deviceIds.map((deviceId) =>
+        deviceMessageKey(farmId, deviceId, "status"),
+      ),
+    );
+    const statuses: Record<string, DeviceMessageEnvelope> = {};
+
+    deviceIds.forEach((deviceId, index) => {
+      const value = cached[index];
+      const envelope = value ? parseDeviceMessageEnvelope(value) : null;
+
+      if (envelope) {
+        statuses[deviceId] = envelope;
+      }
+    });
+
+    return statuses;
+  } catch (error) {
+    console.error(
+      "Load device statuses failed:",
+      error instanceof Error ? error.message : String(error),
+    );
+    return {};
+  }
+}
+
 export async function getPublishedLayoutsByEmail(email: string): Promise<{
   email: string;
   farms: PublishedFarm[];
@@ -205,15 +248,21 @@ export async function getPublishedLayoutsByEmail(email: string): Promise<{
     return null;
   }
 
-  const farms = account.farms
-    .filter((farm) => farm.layout !== null)
-    .map((farm) => ({
-      id: farm.id,
-      name: farm.name,
-      location: farm.location,
-      devices: farm.devices,
-      layout: serializeLayout(farm.layout as StoredLayout),
-    }));
+  const farms = await Promise.all(
+    account.farms
+      .filter((farm) => farm.layout !== null)
+      .map(async (farm) => ({
+        id: farm.id,
+        name: farm.name,
+        location: farm.location,
+        devices: farm.devices,
+        layout: serializeLayout(farm.layout as StoredLayout),
+        statuses: await getDeviceStatuses(
+          farm.id,
+          farm.devices.map((device) => device.id),
+        ),
+      })),
+  );
 
   return { email: account.email, farms };
 }

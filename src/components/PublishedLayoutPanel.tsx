@@ -1,14 +1,28 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { PublishedFarm } from "@/lib/published-layout";
+import {
+  parseDeviceMessageEnvelope,
+  type DeviceMessageEnvelope,
+} from "@/lib/telemetry";
 
 type LayoutResponse = {
   email?: string;
   farms?: PublishedFarm[];
   error?: string;
 };
+
+type StatusMap = Record<string, DeviceMessageEnvelope>;
+type StatusesByFarm = Record<string, StatusMap>;
+type StatusConnectionState = "idle" | "connecting" | "connected" | "reconnecting";
+
+function buildStatusesByFarm(farms: PublishedFarm[]): StatusesByFarm {
+  return Object.fromEntries(
+    farms.map((farm) => [farm.id, farm.statuses ?? {}]),
+  );
+}
 
 const FarmLayoutViewer = dynamic(
   () => import("@/components/farm-layout/FarmLayoutViewer"),
@@ -53,6 +67,12 @@ export function PublishedLayoutPanel({
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusesByFarm, setStatusesByFarm] = useState<StatusesByFarm>(() =>
+    buildStatusesByFarm(initialFarms),
+  );
+  const [statusConnections, setStatusConnections] = useState<
+    Record<string, StatusConnectionState>
+  >({});
 
   const loadLayout = useCallback(async (targetEmail: string) => {
     if (!targetEmail) {
@@ -82,6 +102,10 @@ export function PublishedLayoutPanel({
 
       const loadedFarms = data.farms ?? [];
       setFarms(loadedFarms);
+      setStatusesByFarm((current) => ({
+        ...current,
+        ...buildStatusesByFarm(loadedFarms),
+      }));
       setSelectedFarmId((current) =>
         loadedFarms.some((farm) => farm.id === current)
           ? current
@@ -111,12 +135,119 @@ export function PublishedLayoutPanel({
     };
   }, [email, loadLayout]);
 
+  useEffect(() => {
+    if (!selectedFarmId) {
+      return;
+    }
+
+    let disposed = false;
+    const configuredUrl = process.env.NEXT_PUBLIC_WS_URL;
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const baseUrl = (configuredUrl ?? `${protocol}//${window.location.hostname}:3001`)
+      .trim()
+      .replace(/\/$/, "");
+    const socket = new WebSocket(
+      `${baseUrl}/ws?farmId=${encodeURIComponent(selectedFarmId)}&deviceId=all`,
+    );
+    const updateConnection = (state: StatusConnectionState) => {
+      setStatusConnections((current) => ({
+        ...current,
+        [selectedFarmId]: state,
+      }));
+    };
+
+    socket.onopen = () => {
+      if (!disposed) {
+        updateConnection("connecting");
+      }
+    };
+
+    socket.onerror = () => {
+      if (!disposed) {
+        updateConnection("reconnecting");
+      }
+    };
+
+    socket.onclose = () => {
+      if (!disposed) {
+        updateConnection("reconnecting");
+      }
+    };
+
+    socket.onmessage = (event) => {
+      if (disposed) {
+        return;
+      }
+
+      try {
+        const frame: unknown = JSON.parse(event.data as string);
+
+        if (typeof frame !== "object" || frame === null) {
+          return;
+        }
+
+        const candidate = frame as { type?: unknown; data?: unknown };
+
+        if (candidate.type === "ready") {
+          updateConnection("connected");
+          return;
+        }
+
+        if (
+          candidate.type !== "status" ||
+          typeof candidate.data !== "object" ||
+          candidate.data === null
+        ) {
+          return;
+        }
+
+        const envelope = parseDeviceMessageEnvelope(
+          JSON.stringify(candidate.data),
+        );
+
+        if (!envelope || envelope.farmId !== selectedFarmId) {
+          return;
+        }
+
+        setStatusesByFarm((current) => ({
+          ...current,
+          [selectedFarmId]: {
+            ...(current[selectedFarmId] ?? {}),
+            [envelope.deviceId]: envelope,
+          },
+        }));
+      } catch {
+        return;
+      }
+    };
+
+    return () => {
+      disposed = true;
+      socket.close();
+    };
+  }, [selectedFarmId]);
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void loadLayout(email.trim());
   }
 
   const selectedFarm = farms.find((farm) => farm.id === selectedFarmId);
+  const selectedStatuses = useMemo(
+    () => statusesByFarm[selectedFarmId] ?? {},
+    [statusesByFarm, selectedFarmId],
+  );
+  const statusConnection: StatusConnectionState = selectedFarmId
+    ? (statusConnections[selectedFarmId] ?? "connecting")
+    : "idle";
+  const statusConnectionLabel =
+    statusConnection === "connected"
+      ? "Live status"
+      : statusConnection === "reconnecting"
+        ? "Status reconnecting"
+        : statusConnection === "connecting"
+          ? "Status connecting"
+          : "Status idle";
 
   return (
     <section className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -196,9 +327,20 @@ export function PublishedLayoutPanel({
       {selectedFarm ? (
         <div className="mt-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500 dark:text-slate-400">
-            <span className="font-medium text-slate-700 dark:text-slate-200">
-              {selectedFarm.name}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-slate-700 dark:text-slate-200">
+                {selectedFarm.name}
+              </span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                  statusConnection === "connected"
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                    : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                }`}
+              >
+                {statusConnectionLabel}
+              </span>
+            </div>
             <span>
               Version {selectedFarm.layout.version}
               {formatUpdatedAt(selectedFarm.layout.updatedAt)}
@@ -207,6 +349,7 @@ export function PublishedLayoutPanel({
           <FarmLayoutViewer
             layout={selectedFarm.layout}
             devices={selectedFarm.devices}
+            statuses={selectedStatuses}
           />
         </div>
       ) : null}

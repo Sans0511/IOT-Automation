@@ -11,7 +11,6 @@ import { getRedis } from "../src/lib/redis";
 import {
   deviceMessageKey,
   parseDeviceMessageEnvelope,
-  telemetryChannel,
   type DeviceMessageEnvelope,
 } from "../src/lib/telemetry";
 
@@ -19,6 +18,8 @@ const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const DEFAULT_PORT = 3001;
 const TELEMETRY_PATTERN = "telemetry:*";
+const STATUS_PATTERN = "status:*";
+const ALL_DEVICES = "all";
 const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
@@ -26,17 +27,17 @@ const DEFAULT_ALLOWED_ORIGINS = [
 
 type RedisClient = Awaited<ReturnType<typeof getRedis>>;
 
-type TelemetryFrame =
+type StreamFrame =
   | { type: "ready"; farmId: string; deviceId: string }
-  | { type: "telemetry"; data: DeviceMessageEnvelope };
+  | { type: "telemetry"; data: DeviceMessageEnvelope }
+  | { type: "status"; data: DeviceMessageEnvelope };
 
-interface TelemetryClient {
-  channel: string;
+interface StreamClient {
   farmId: string;
   deviceId: string;
 }
 
-const clients = new Map<WebSocket, TelemetryClient>();
+const clients = new Map<WebSocket, StreamClient>();
 let subscriber: RedisClient | null = null;
 
 function getPort(): number {
@@ -74,7 +75,7 @@ function isAllowedOrigin(request: IncomingMessage): boolean {
   return getAllowedOrigins().includes(origin);
 }
 
-function sendFrame(socket: WebSocket, frame: TelemetryFrame): void {
+function sendFrame(socket: WebSocket, frame: StreamFrame): void {
   if (socket.readyState !== WebSocket.OPEN) {
     return;
   }
@@ -114,15 +115,18 @@ async function handleConnection(
     const host = request.headers.host ?? "localhost";
     const requestUrl = new URL(request.url ?? "/ws", `http://${host}`);
     const farmId = requestUrl.searchParams.get("farmId");
-    const deviceId = requestUrl.searchParams.get("deviceId");
+    const rawDeviceId = requestUrl.searchParams.get("deviceId");
 
-    if (
-      !farmId ||
-      !deviceId ||
-      !OBJECT_ID_PATTERN.test(farmId) ||
-      !OBJECT_ID_PATTERN.test(deviceId)
-    ) {
-      await fail(4400, "Valid farmId and deviceId are required");
+    if (!farmId || !OBJECT_ID_PATTERN.test(farmId)) {
+      await fail(4400, "A valid farmId is required");
+      return;
+    }
+
+    const farmWide = !rawDeviceId || rawDeviceId === ALL_DEVICES;
+    const deviceId = farmWide ? ALL_DEVICES : rawDeviceId;
+
+    if (deviceId !== ALL_DEVICES && !OBJECT_ID_PATTERN.test(deviceId)) {
+      await fail(4400, "A valid deviceId is required");
       return;
     }
 
@@ -133,31 +137,79 @@ async function handleConnection(
       return;
     }
 
-    const device = await prisma.device.findFirst({
-      where: { id: deviceId, farmId },
-      include: { farm: { select: { ownerId: true } } },
+    const farm = await prisma.farm.findUnique({
+      where: { id: farmId },
+      select: { ownerId: true },
     });
 
-    if (!device || !canAccessOwner(user, device.farm.ownerId)) {
-      await fail(4403, "Device not found");
+    if (!farm || !canAccessOwner(user, farm.ownerId)) {
+      await fail(4403, "Farm not found");
       return;
+    }
+
+    if (deviceId !== ALL_DEVICES) {
+      const device = await prisma.device.findFirst({
+        where: { id: deviceId, farmId },
+        select: { id: true },
+      });
+
+      if (!device) {
+        await fail(4403, "Device not found");
+        return;
+      }
     }
 
     console.log(`WebSocket client connected: ${farmId}/${deviceId}`);
 
     const redis = await getRedis();
-    const cached = await redis.get(
-      deviceMessageKey(farmId, deviceId, "telemetry"),
-    );
-    const snapshot = cached ? parseDeviceMessageEnvelope(cached) : null;
 
-    const channel = telemetryChannel(farmId, deviceId);
-    clients.set(socket, { channel, farmId, deviceId });
+    if (deviceId === ALL_DEVICES) {
+      const devices = await prisma.device.findMany({
+        where: { farmId },
+        select: { id: true },
+      });
+      const statusKeys = devices.map((device) =>
+        deviceMessageKey(farmId, device.id, "status"),
+      );
 
-    if (snapshot) {
-      sendFrame(socket, { type: "telemetry", data: snapshot });
+      if (statusKeys.length > 0) {
+        const cachedStatuses = await redis.mGet(statusKeys);
+
+        for (const cached of cachedStatuses) {
+          const snapshot = cached
+            ? parseDeviceMessageEnvelope(cached)
+            : null;
+
+          if (snapshot) {
+            sendFrame(socket, { type: "status", data: snapshot });
+          }
+        }
+      }
+    } else {
+      const cachedStatus = await redis.get(
+        deviceMessageKey(farmId, deviceId, "status"),
+      );
+      const statusSnapshot = cachedStatus
+        ? parseDeviceMessageEnvelope(cachedStatus)
+        : null;
+
+      if (statusSnapshot) {
+        sendFrame(socket, { type: "status", data: statusSnapshot });
+      }
+
+      const cachedTelemetry = await redis.get(
+        deviceMessageKey(farmId, deviceId, "telemetry"),
+      );
+      const telemetrySnapshot = cachedTelemetry
+        ? parseDeviceMessageEnvelope(cachedTelemetry)
+        : null;
+
+      if (telemetrySnapshot) {
+        sendFrame(socket, { type: "telemetry", data: telemetrySnapshot });
+      }
     }
 
+    clients.set(socket, { farmId, deviceId });
     sendFrame(socket, { type: "ready", farmId, deviceId });
 
     let isAlive = true;
@@ -190,7 +242,7 @@ async function handleConnection(
       "WebSocket connection failed:",
       error instanceof Error ? error.message : String(error),
     );
-    await fail(1011, "Unable to start telemetry stream");
+    await fail(1011, "Unable to start device stream");
   }
 }
 
@@ -228,26 +280,44 @@ async function start() {
   const redis = await getRedis();
   subscriber = redis.duplicate();
   await subscriber.connect();
-  await subscriber.pSubscribe(TELEMETRY_PATTERN, (message, channel) => {
+
+  const handleMessage = (message: string) => {
     const envelope = parseDeviceMessageEnvelope(message);
 
     if (!envelope) {
       return;
     }
 
+    const frame: StreamFrame =
+      envelope.kind === "status"
+        ? { type: "status", data: envelope }
+        : { type: "telemetry", data: envelope };
     let recipients = 0;
 
     for (const [socket, client] of clients) {
-      if (client.channel === channel && socket.readyState === WebSocket.OPEN) {
-        sendFrame(socket, { type: "telemetry", data: envelope });
+      const wantsDevice =
+        client.deviceId === ALL_DEVICES ||
+        client.deviceId === envelope.deviceId;
+
+      if (
+        wantsDevice &&
+        client.farmId === envelope.farmId &&
+        socket.readyState === WebSocket.OPEN
+      ) {
+        sendFrame(socket, frame);
         recipients += 1;
       }
     }
 
     if (recipients > 0) {
-      console.log(`Telemetry fanout ${channel} -> ${recipients}`);
+      console.log(
+        `${envelope.kind} fanout ${envelope.farmId}/${envelope.deviceId} -> ${recipients}`,
+      );
     }
-  });
+  };
+
+  await subscriber.pSubscribe(TELEMETRY_PATTERN, handleMessage);
+  await subscriber.pSubscribe(STATUS_PATTERN, handleMessage);
 
   server.listen(port, () => {
     console.log(`WebSocket server listening on ws://localhost:${port}/ws`);

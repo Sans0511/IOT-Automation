@@ -3,10 +3,10 @@ import "dotenv/config";
 import { randomUUID } from "crypto";
 import { connect, type MqttClient } from "mqtt";
 import { getMqttBrokerUrl } from "../src/lib/mqttClient";
-import { getRedis, publishTelemetry } from "../src/lib/redis";
+import { getRedis, publishDeviceStatus, publishTelemetry } from "../src/lib/redis";
 import {
+  deviceChannel,
   deviceMessageKey,
-  telemetryChannel,
   type DeviceMessageEnvelope,
 } from "../src/lib/telemetry";
 
@@ -161,12 +161,13 @@ export async function startMqttWorker(): Promise<MqttClient> {
 
       console.log(`Cached ${deviceTopic.kind} -> ${key}`);
 
-      if (deviceTopic.kind === "telemetry") {
+      if (deviceTopic.kind === "status") {
+        await publishDeviceStatus(envelope);
+      } else {
         await publishTelemetry(envelope);
-        console.log(
-          `Published telemetry -> ${telemetryChannel(envelope.farmId, envelope.deviceId)}`,
-        );
       }
+
+      console.log(`Published ${deviceTopic.kind} -> ${deviceChannel(envelope)}`);
     });
   });
 

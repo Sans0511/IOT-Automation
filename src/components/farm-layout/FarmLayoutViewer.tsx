@@ -2,6 +2,12 @@
 
 import { useMemo } from "react";
 import {
+  getDeviceRuntimeStatus,
+  type DeviceMessageEnvelope,
+  type DeviceRuntimeState,
+  type DeviceRuntimeStatus,
+} from "@/lib/telemetry";
+import {
   DEVICE_TYPE_LABELS,
   FARM_BACKGROUND_LABELS,
   FARM_DEVICE_PORT_OFFSET,
@@ -14,10 +20,14 @@ import {
 } from "@/lib/farm-layout";
 
 type ResolvedEndpoint = { point: FarmPoint; offset: number };
+type StatusMap = Record<string, DeviceMessageEnvelope>;
+type FlowState = "active" | "inactive" | "unknown";
+type FlowVisual = { path: string; state: FlowState };
 
 type ViewerProps = {
   layout: FarmLayoutData;
   devices: FarmLayoutDevice[];
+  statuses: StatusMap;
 };
 
 const SNAP_DISTANCE = 40;
@@ -54,6 +64,44 @@ const DEVICE_COLORS: Record<string, string> = {
   SOLENOID_VALVE: "#ea580c",
   RAIN_DETECTION: "#0ea5e9",
   SMART_IRRIGATION_CONTROLLER: "#4f46e5",
+};
+
+const FLOW_STYLES: Record<
+  FlowState,
+  { glow: string; line: string; dash: string; opacity: number; animate: boolean }
+> = {
+  active: {
+    glow: "#0284c7",
+    line: "#0284c7",
+    dash: "#ffffff",
+    opacity: 0.16,
+    animate: true,
+  },
+  inactive: {
+    glow: "#94a3b8",
+    line: "#94a3b8",
+    dash: "#ffffff",
+    opacity: 0.08,
+    animate: false,
+  },
+  unknown: {
+    glow: "#0284c7",
+    line: "#0284c7",
+    dash: "#ffffff",
+    opacity: 0.1,
+    animate: false,
+  },
+};
+
+const STATUS_STYLES: Record<DeviceRuntimeState, string> = {
+  RUNNING: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300",
+  OPEN: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300",
+  STOPPED: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  CLOSED: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  ONLINE: "bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300",
+  OFFLINE: "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300",
+  STALE: "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300",
+  "NO DATA": "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
 };
 
 function getDevicePorts(type: string): ("inlet" | "outlet")[] {
@@ -306,7 +354,133 @@ function deviceLabel(
   return DEVICE_TYPE_LABELS[type] ?? type.replaceAll("_", " ");
 }
 
-export default function FarmLayoutViewer({ layout, devices }: ViewerProps) {
+function isPumpType(type: string): boolean {
+  return type === "PUMP" || type === "MOTOR_PUMP";
+}
+
+function getUpstreamPumpState(
+  connection: FarmLayoutConnection,
+  connectionsById: Map<string, FarmLayoutConnection>,
+  devicesById: Map<string, FarmLayoutDevice>,
+  runtimeByDevice: Map<string, DeviceRuntimeStatus>,
+  statuses: StatusMap,
+  visited: Set<string>,
+): FlowState {
+  if (visited.has(connection.id)) {
+    return "unknown";
+  }
+
+  visited.add(connection.id);
+  const parents: FarmLayoutConnection[] = [];
+
+  if (connection.fromConnectionId) {
+    const parent = connectionsById.get(connection.fromConnectionId);
+
+    if (parent) {
+      parents.push(parent);
+    }
+  }
+
+  if (connection.fromDeviceId) {
+    for (const candidate of connectionsById.values()) {
+      if (
+        candidate.id !== connection.id &&
+        candidate.toDeviceId === connection.fromDeviceId
+      ) {
+        parents.push(candidate);
+      }
+    }
+  }
+
+  let sawInactivePump = false;
+
+  for (const parent of parents) {
+    const state = getConnectionPumpState(
+      parent,
+      connectionsById,
+      devicesById,
+      runtimeByDevice,
+      statuses,
+      visited,
+    );
+
+    if (state === "active") {
+      return "active";
+    }
+
+    if (state === "inactive") {
+      sawInactivePump = true;
+    }
+  }
+
+  return sawInactivePump ? "inactive" : "unknown";
+}
+
+function getConnectionPumpState(
+  connection: FarmLayoutConnection,
+  connectionsById: Map<string, FarmLayoutConnection>,
+  devicesById: Map<string, FarmLayoutDevice>,
+  runtimeByDevice: Map<string, DeviceRuntimeStatus>,
+  statuses: StatusMap,
+  visited: Set<string> = new Set(),
+): FlowState {
+  const pumpIds: string[] = [];
+
+  for (const deviceId of [connection.fromDeviceId, connection.toDeviceId]) {
+    if (!deviceId) {
+      continue;
+    }
+
+    const type = devicesById.get(deviceId)?.type ?? "";
+
+    if (isPumpType(type)) {
+      pumpIds.push(deviceId);
+    }
+  }
+
+  if (pumpIds.length > 0) {
+    if (pumpIds.some((deviceId) => !statuses[deviceId])) {
+      return "unknown";
+    }
+
+    return pumpIds.some(
+      (deviceId) => runtimeByDevice.get(deviceId)?.active === true,
+    )
+      ? "active"
+      : "inactive";
+  }
+
+  return getUpstreamPumpState(
+    connection,
+    connectionsById,
+    devicesById,
+    runtimeByDevice,
+    statuses,
+    visited,
+  );
+}
+
+function getFlowState(
+  connection: FarmLayoutConnection,
+  devicesById: Map<string, FarmLayoutDevice>,
+  runtimeByDevice: Map<string, DeviceRuntimeStatus>,
+  statuses: StatusMap,
+  connectionsById: Map<string, FarmLayoutConnection>,
+): FlowState {
+  return getConnectionPumpState(
+    connection,
+    connectionsById,
+    devicesById,
+    runtimeByDevice,
+    statuses,
+  );
+}
+
+export default function FarmLayoutViewer({
+  layout,
+  devices,
+  statuses,
+}: ViewerProps) {
   const placementsById = useMemo(
     () => new Map(layout.placements.map((placement) => [placement.deviceId, placement])),
     [layout.placements],
@@ -319,7 +493,21 @@ export default function FarmLayoutViewer({ layout, devices }: ViewerProps) {
     () => new Map(devices.map((device) => [device.id, device])),
     [devices],
   );
-  const flowPaths = useMemo(
+  const connectionsById = useMemo(
+    () => new Map(layout.connections.map((connection) => [connection.id, connection])),
+    [layout.connections],
+  );
+  const runtimeByDevice = useMemo(
+    () =>
+      new Map(
+        devices.map((device) => [
+          device.id,
+          getDeviceRuntimeStatus(statuses[device.id], device.type),
+        ]),
+      ),
+    [devices, statuses],
+  );
+  const flowVisuals = useMemo(
     () =>
       layout.connections
         .map((connection) => {
@@ -335,18 +523,35 @@ export default function FarmLayoutViewer({ layout, devices }: ViewerProps) {
             return null;
           }
 
-          return toPolyline(
-            buildFlowPoints(
-              from.point,
-              to.point,
-              connection.waypoints ?? [],
-              from.offset,
-              to.offset,
+          return {
+            path: toPolyline(
+              buildFlowPoints(
+                from.point,
+                to.point,
+                connection.waypoints ?? [],
+                from.offset,
+                to.offset,
+              ),
             ),
-          );
+            state: getFlowState(
+              connection,
+              devicesById,
+              runtimeByDevice,
+              statuses,
+              connectionsById,
+            ),
+          };
         })
-        .filter((path): path is string => path !== null),
-    [layout.connections, placementsById, itemsById],
+        .filter((visual): visual is FlowVisual => visual !== null),
+    [
+      connectionsById,
+      devicesById,
+      itemsById,
+      layout.connections,
+      placementsById,
+      runtimeByDevice,
+      statuses,
+    ],
   );
 
   return (
@@ -369,44 +574,50 @@ export default function FarmLayoutViewer({ layout, devices }: ViewerProps) {
         preserveAspectRatio="none"
         aria-hidden="true"
       >
-        {flowPaths.map((path, index) => (
-          <g key={index}>
-            <polyline
-              points={path}
-              fill="none"
-              stroke="#0284c7"
-              strokeWidth={7}
-              strokeOpacity={0.16}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <polyline
-              points={path}
-              fill="none"
-              stroke="#0284c7"
-              strokeWidth={3}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <polyline
-              points={path}
-              fill="none"
-              stroke="#ffffff"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray="10 8"
-            >
-              <animate
-                attributeName="stroke-dashoffset"
-                from="0"
-                to="-36"
-                dur="1s"
-                repeatCount="indefinite"
+        {flowVisuals.map((visual, index) => {
+          const style = FLOW_STYLES[visual.state];
+
+          return (
+            <g key={index}>
+              <polyline
+                points={visual.path}
+                fill="none"
+                stroke={style.glow}
+                strokeWidth={7}
+                strokeOpacity={style.opacity}
+                strokeLinecap="round"
+                strokeLinejoin="round"
               />
-            </polyline>
-          </g>
-        ))}
+              <polyline
+                points={visual.path}
+                fill="none"
+                stroke={style.line}
+                strokeWidth={3}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <polyline
+                points={visual.path}
+                fill="none"
+                stroke={style.dash}
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray="10 8"
+              >
+                {style.animate ? (
+                  <animate
+                    attributeName="stroke-dashoffset"
+                    from="0"
+                    to="-36"
+                    dur="1s"
+                    repeatCount="indefinite"
+                  />
+                ) : null}
+              </polyline>
+            </g>
+          );
+        })}
       </svg>
 
       {layout.backgroundItems.map((item) => {
@@ -450,6 +661,8 @@ export default function FarmLayoutViewer({ layout, devices }: ViewerProps) {
         const type = device?.type ?? placement.presetKey ?? "DEVICE";
         const icon = DEVICE_ICONS[type];
         const label = deviceLabel(placement, devicesById);
+        const runtime = runtimeByDevice.get(placement.deviceId);
+        const runtimeState = runtime?.state ?? "NO DATA";
 
         return (
           <div
@@ -461,6 +674,9 @@ export default function FarmLayoutViewer({ layout, devices }: ViewerProps) {
               transform: `translate(-50%, -50%) rotate(${placement.rotation}deg)`,
             }}
           >
+            <span className="mb-1 max-w-28 truncate rounded bg-white/90 px-1 text-[10px] font-medium text-slate-700 shadow-sm">
+              {label}
+            </span>
             <span
               className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-[10px] font-bold text-sky-700 shadow-sm ring-1 ring-sky-200"
               style={
@@ -476,8 +692,10 @@ export default function FarmLayoutViewer({ layout, devices }: ViewerProps) {
             >
               {icon ? null : type.slice(0, 3)}
             </span>
-            <span className="mt-1 max-w-28 truncate rounded bg-white/90 px-1 text-[10px] font-medium text-slate-700 shadow-sm">
-              {label}
+            <span
+              className={`mt-0.5 rounded px-1.5 py-0.5 text-[9px] font-semibold shadow-sm ${STATUS_STYLES[runtimeState]}`}
+            >
+              {runtimeState}
             </span>
           </div>
         );

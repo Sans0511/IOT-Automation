@@ -342,34 +342,35 @@ function DeviceNode({
            </Group>
          );
        })}
-       <Rect
-         x={-72}
-         y={32}
-         width={144}
-         height={26}
-        fill="rgba(255,255,255,0.92)"
-        cornerRadius={6}
-      />
-      <Text
-        x={-68}
-        y={38}
-        width={136}
-        text={placement.label || device.name}
-        fontSize={12}
-        fontStyle="bold"
-        align="center"
-        ellipsis
-        fill="#1f2937"
-      />
-      <Text
-        x={-68}
-        y={60}
-        width={136}
-        text={DEVICE_TYPE_LABELS[device.type] ?? device.type}
-        fontSize={10}
-        align="center"
-        fill="#64748b"
-      />
+        <Rect
+          x={-72}
+          y={-59}
+          width={144}
+          height={26}
+          fill="rgba(255,255,255,0.92)"
+          cornerRadius={6}
+        />
+        <Text
+          x={-68}
+          y={-53}
+          width={136}
+          text={placement.label || device.name}
+          fontSize={12}
+          fontStyle="bold"
+          align="center"
+          ellipsis
+          fill="#1f2937"
+        />
+        <Text
+          x={-68}
+          y={32}
+          width={136}
+          text={DEVICE_TYPE_LABELS[device.type] ?? device.type}
+          fontSize={10}
+          align="center"
+          fill="#64748b"
+        />
+
     </Group>
   );
 }

@@ -1,6 +1,7 @@
 import { createClient, type RedisClientType } from "redis";
 import {
-  telemetryChannel,
+  deviceChannel,
+  statusChannel,
   type DeviceMessageEnvelope,
 } from "./telemetry";
 
@@ -81,8 +82,15 @@ export async function publishTelemetry(
   envelope: DeviceMessageEnvelope,
 ): Promise<void> {
   const redis = await getRedis();
+  await redis.publish(deviceChannel(envelope), JSON.stringify(envelope));
+}
+
+export async function publishDeviceStatus(
+  envelope: DeviceMessageEnvelope,
+): Promise<void> {
+  const redis = await getRedis();
   await redis.publish(
-    telemetryChannel(envelope.farmId, envelope.deviceId),
+    statusChannel(envelope.farmId, envelope.deviceId),
     JSON.stringify(envelope),
   );
 }

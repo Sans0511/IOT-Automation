@@ -21,6 +21,137 @@ export function telemetryChannel(farmId: string, deviceId: string): string {
   return `telemetry:${farmId}:${deviceId}`;
 }
 
+export function statusChannel(farmId: string, deviceId: string): string {
+  return `status:${farmId}:${deviceId}`;
+}
+
+export function deviceChannel(envelope: DeviceMessageEnvelope): string {
+  return envelope.kind === "status"
+    ? statusChannel(envelope.farmId, envelope.deviceId)
+    : telemetryChannel(envelope.farmId, envelope.deviceId);
+}
+
+export const DEVICE_STATUS_FRESH_MS = 60_000;
+
+export type DeviceRuntimeState =
+  | "RUNNING"
+  | "STOPPED"
+  | "OPEN"
+  | "CLOSED"
+  | "ONLINE"
+  | "OFFLINE"
+  | "STALE"
+  | "NO DATA";
+
+export interface DeviceRuntimeStatus {
+  state: DeviceRuntimeState;
+  active: boolean;
+  stale: boolean;
+  online: boolean;
+}
+
+function readBoolean(
+  payload: Record<string, unknown>,
+  keys: string[],
+): boolean | null {
+  for (const key of keys) {
+    if (typeof payload[key] === "boolean") {
+      return payload[key];
+    }
+  }
+
+  return null;
+}
+
+function readState(payload: Record<string, unknown>): string {
+  for (const key of ["state", "status"]) {
+    const value = payload[key];
+
+    if (typeof value === "string") {
+      return value.trim().toUpperCase();
+    }
+  }
+
+  return "";
+}
+
+function stateActiveValue(state: string): boolean | null {
+  if (["RUNNING", "ON", "OPEN", "ACTIVE"].includes(state)) {
+    return true;
+  }
+
+  if (["STOPPED", "OFF", "CLOSED", "INACTIVE"].includes(state)) {
+    return false;
+  }
+
+  return null;
+}
+
+export function getDeviceRuntimeStatus(
+  envelope: DeviceMessageEnvelope | null | undefined,
+  deviceType: string,
+  now = Date.now(),
+): DeviceRuntimeStatus {
+  if (!envelope) {
+    return { state: "NO DATA", active: false, stale: false, online: false };
+  }
+
+  const receivedAt = Date.parse(envelope.receivedAt);
+
+  if (!Number.isNaN(receivedAt) && now - receivedAt > DEVICE_STATUS_FRESH_MS) {
+    return { state: "STALE", active: false, stale: true, online: false };
+  }
+
+  const state = readState(envelope.payload);
+  const explicitOnline = readBoolean(envelope.payload, ["online", "connected"]);
+  const explicitActiveKeys =
+    deviceType === "SOLENOID_VALVE" || deviceType === "VALVE"
+      ? ["valveOpen", "open", "active"]
+      : ["pumpOn", "running", "active"];
+  const explicitActive = readBoolean(envelope.payload, explicitActiveKeys);
+  const derivedActive = stateActiveValue(state);
+  const hasActiveValue = explicitActive !== null || derivedActive !== null;
+  const active = explicitActive ?? derivedActive ?? false;
+  const offline = state === "OFFLINE" || explicitOnline === false;
+  const online =
+    !offline &&
+    (explicitOnline === true || state === "ONLINE" || hasActiveValue);
+
+  if (offline) {
+    return { state: "OFFLINE", active: false, stale: false, online: false };
+  }
+
+  if (hasActiveValue && active) {
+    return {
+      state:
+        deviceType === "SOLENOID_VALVE" || deviceType === "VALVE"
+          ? "OPEN"
+          : "RUNNING",
+      active: true,
+      stale: false,
+      online: true,
+    };
+  }
+
+  if (hasActiveValue) {
+    return {
+      state:
+        deviceType === "SOLENOID_VALVE" || deviceType === "VALVE"
+          ? "CLOSED"
+          : "STOPPED",
+      active: false,
+      stale: false,
+      online: true,
+    };
+  }
+
+  if (online) {
+    return { state: "ONLINE", active: false, stale: false, online: true };
+  }
+
+  return { state: "NO DATA", active: false, stale: false, online: false };
+}
+
 export function parseDeviceMessageEnvelope(
   value: string,
 ): DeviceMessageEnvelope | null {
