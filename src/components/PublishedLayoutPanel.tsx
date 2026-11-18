@@ -2,6 +2,16 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
+import { DeviceCommandDialog } from "@/components/DeviceCommandDialog";
+import { DeviceControls } from "@/components/DeviceControls";
+import {
+  getToggleDeviceCommand,
+  isControllableDeviceType,
+  type DeviceCommand,
+  type DeviceCommandTarget,
+  type PendingDeviceCommand,
+} from "@/lib/device-control";
+import type { FarmLayoutDevice } from "@/lib/farm-layout";
 import type { PublishedFarm } from "@/lib/published-layout";
 import {
   getDeviceRuntimeStatus,
@@ -30,6 +40,11 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
   );
   const [statusConnection, setStatusConnection] =
     useState<StatusConnectionState>("connecting");
+  const [pendingCommand, setPendingCommand] =
+    useState<PendingDeviceCommand | null>(null);
+  const [commandBusy, setCommandBusy] = useState(false);
+  const [commandError, setCommandError] = useState<string | null>(null);
+  const [commandNotice, setCommandNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!farmId) {
@@ -160,6 +175,66 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
     },
   ];
 
+  function requestCommand(
+    device: DeviceCommandTarget,
+    command: DeviceCommand,
+  ) {
+    if (commandBusy) {
+      return;
+    }
+
+    setCommandNotice(null);
+    setCommandError(null);
+    setPendingCommand({ device, command });
+  }
+
+  function handleDeviceDoubleClick(device: FarmLayoutDevice) {
+    if (!isControllableDeviceType(device.type)) {
+      return;
+    }
+
+    const runtime = getDeviceRuntimeStatus(statuses[device.id], device.type);
+    requestCommand(device, getToggleDeviceCommand(runtime));
+  }
+
+  async function confirmCommand() {
+    if (!pendingCommand) {
+      return;
+    }
+
+    const target = pendingCommand;
+    setCommandBusy(true);
+    setCommandError(null);
+
+    try {
+      const response = await fetch(
+        `/api/devices/${encodeURIComponent(target.device.id)}/command`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ command: target.command }),
+        },
+      );
+      const data = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Unable to send command");
+      }
+
+      setCommandNotice(
+        `${target.device.name} ${target.command} command sent.`,
+      );
+      setPendingCommand(null);
+    } catch (error) {
+      setCommandError(
+        error instanceof Error ? error.message : "Unable to send command",
+      );
+    } finally {
+      setCommandBusy(false);
+    }
+  }
+
   return (
     <div id="dashboard" className="space-y-8">
       <header>
@@ -193,6 +268,14 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
         ))}
       </div>
 
+      <DeviceControls
+        devices={farm?.devices ?? []}
+        statuses={statuses}
+        notice={commandNotice}
+        busy={commandBusy}
+        onRequest={requestCommand}
+      />
+
       <section
         id="farm-layout"
         className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
@@ -206,7 +289,8 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
               {farmName}
             </h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Published farm layout with live device status.
+              Published farm layout with live device status. Double-click a pump
+              or valve to toggle it.
             </p>
           </div>
           <span
@@ -224,6 +308,7 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
             layout={farm.layout}
             devices={farm.devices}
             statuses={statuses}
+            onDeviceDoubleClick={handleDeviceDoubleClick}
           />
         ) : (
           <p className="rounded-xl bg-slate-50 px-4 py-6 text-sm text-slate-500 dark:bg-slate-950 dark:text-slate-400">
@@ -231,6 +316,17 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
           </p>
         )}
       </section>
+
+      <DeviceCommandDialog
+        pending={pendingCommand}
+        busy={commandBusy}
+        error={commandError}
+        onCancel={() => {
+          setPendingCommand(null);
+          setCommandError(null);
+        }}
+        onConfirm={() => void confirmCommand()}
+      />
     </div>
   );
 }

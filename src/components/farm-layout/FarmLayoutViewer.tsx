@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { isControllableDeviceType } from "@/lib/device-control";
 import {
   getDeviceRuntimeStatus,
   type DeviceMessageEnvelope,
@@ -28,6 +29,7 @@ type ViewerProps = {
   layout: FarmLayoutData;
   devices: FarmLayoutDevice[];
   statuses: StatusMap;
+  onDeviceDoubleClick?: (device: FarmLayoutDevice) => void;
 };
 
 const SNAP_DISTANCE = 40;
@@ -480,6 +482,7 @@ export default function FarmLayoutViewer({
   layout,
   devices,
   statuses,
+  onDeviceDoubleClick,
 }: ViewerProps) {
   const placementsById = useMemo(
     () => new Map(layout.placements.map((placement) => [placement.deviceId, placement])),
@@ -663,11 +666,22 @@ export default function FarmLayoutViewer({
         const label = deviceLabel(placement, devicesById);
         const runtime = runtimeByDevice.get(placement.deviceId);
         const runtimeState = runtime?.state ?? "NO DATA";
+        const controllable = device
+          ? isControllableDeviceType(device.type)
+          : false;
 
         return (
           <div
             key={placement.deviceId}
-            className="absolute flex flex-col items-center"
+            className={`absolute flex flex-col items-center ${
+              controllable ? "cursor-pointer select-none" : ""
+            }`}
+            title={controllable ? "Double-click to toggle" : undefined}
+            onDoubleClick={
+              device && controllable
+                ? () => onDeviceDoubleClick?.(device)
+                : undefined
+            }
             style={{
               left: `${(placement.x / layout.width) * 100}%`,
               top: `${(placement.y / layout.height) * 100}%`,
