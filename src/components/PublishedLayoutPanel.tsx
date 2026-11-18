@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DeviceCommandDialog } from "@/components/DeviceCommandDialog";
 import { DeviceControls } from "@/components/DeviceControls";
 import {
@@ -48,6 +48,18 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
   const [commandError, setCommandError] = useState<string | null>(null);
   const [commandNotice, setCommandNotice] = useState<string | null>(null);
 
+  const previousFarmIdRef = useRef(farmId);
+
+  useEffect(() => {
+    if (previousFarmIdRef.current === farmId) {
+      return;
+    }
+
+    previousFarmIdRef.current = farmId;
+    setStatuses(farm?.statuses ?? {});
+    setTelemetry({});
+  }, [farmId, farm?.statuses]);
+
   useEffect(() => {
     if (!farmId) {
       return;
@@ -74,10 +86,7 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
       }
 
       let retryScheduled = false;
-      const currentSocket = new WebSocket(
-        `${baseUrl}/ws?farmId=${encodeURIComponent(activeFarmId)}&deviceId=all`,
-      );
-      socket = currentSocket;
+      let currentSocket: WebSocket | null = null;
 
       const scheduleReconnect = () => {
         if (disposed || retryScheduled) {
@@ -93,15 +102,27 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
         );
         reconnectAttempts = Math.min(reconnectAttempts + 1, 20);
 
-        currentSocket.close();
+        currentSocket?.close();
         reconnectTimer = setTimeout(() => {
           reconnectTimer = null;
           connect();
         }, delay);
       };
 
-      currentSocket.onopen = () => {
-        if (disposed || socket !== currentSocket) {
+      try {
+        currentSocket = new WebSocket(
+          `${baseUrl}/ws?farmId=${encodeURIComponent(activeFarmId)}&deviceId=all`,
+        );
+      } catch {
+        scheduleReconnect();
+        return;
+      }
+
+      const activeSocket = currentSocket;
+      socket = activeSocket;
+
+      activeSocket.onopen = () => {
+        if (disposed || socket !== activeSocket) {
           return;
         }
 
@@ -109,8 +130,8 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
         setStatusConnection("connecting");
       };
 
-      currentSocket.onerror = () => {
-        if (disposed || socket !== currentSocket) {
+      activeSocket.onerror = () => {
+        if (disposed || socket !== activeSocket) {
           return;
         }
 
@@ -118,8 +139,8 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
         scheduleReconnect();
       };
 
-      currentSocket.onclose = () => {
-        if (disposed || socket !== currentSocket) {
+      activeSocket.onclose = () => {
+        if (disposed || socket !== activeSocket) {
           return;
         }
 
@@ -127,8 +148,8 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
         scheduleReconnect();
       };
 
-      currentSocket.onmessage = (event) => {
-        if (disposed || socket !== currentSocket) {
+      activeSocket.onmessage = (event) => {
+        if (disposed || socket !== activeSocket) {
           return;
         }
 

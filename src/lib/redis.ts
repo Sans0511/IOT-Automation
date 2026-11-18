@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createClient, type RedisClientType } from "redis";
 import { DEFAULT_CACHE_TTL_SECONDS } from "./freshness";
 import {
@@ -118,6 +118,20 @@ export async function publishDeviceStatus(
 
 export function hashRefreshToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+export function refreshTokenHashMatches(
+  token: string,
+  expectedHash: string,
+): boolean {
+  const actualHash = hashRefreshToken(token);
+  const actualBuffer = Buffer.from(actualHash, "hex");
+  const expectedBuffer = Buffer.from(expectedHash, "hex");
+
+  return (
+    actualBuffer.length === expectedBuffer.length &&
+    timingSafeEqual(actualBuffer, expectedBuffer)
+  );
 }
 
 function refreshTokenKey(userId: string): string {

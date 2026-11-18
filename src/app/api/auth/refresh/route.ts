@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import {
   getRefreshSession,
   hashRefreshToken,
+  refreshTokenHashMatches,
   revokeRefreshFamily,
   storeRefreshSession,
 } from "@/lib/redis";
@@ -43,11 +44,11 @@ export async function POST(request: NextRequest) {
 
     const session = await getRefreshSession(payload.sub);
 
-    if (
-      !session ||
-      session.tokenHash !== hashRefreshToken(token) ||
-      session.familyId !== payload.familyId
-    ) {
+    if (!session || session.familyId !== payload.familyId) {
+      return unauthorizedResponse();
+    }
+
+    if (!refreshTokenHashMatches(token, session.tokenHash)) {
       await revokeRefreshFamily(payload.familyId);
       return unauthorizedResponse();
     }

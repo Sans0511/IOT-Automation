@@ -217,8 +217,22 @@ function markStaleSensors(cacheTtlSeconds: number): void {
               "STALE",
               cacheTtlSeconds,
             );
+          } catch (error) {
+            logError("mqtt_stale_status_failed", {
+              farmId: target.farmId,
+              deviceId: target.deviceId,
+              error: errorMessage(error),
+            });
           } finally {
-            await redis.del(key);
+            try {
+              await redis.del(key);
+            } catch (error) {
+              logError("mqtt_stale_key_delete_failed", {
+                farmId: target.farmId,
+                deviceId: target.deviceId,
+                error: errorMessage(error),
+              });
+            }
           }
         }
       }
@@ -355,8 +369,15 @@ export async function startMqttWorker(): Promise<MqttClient> {
     process.exitCode = 0;
   };
 
-  process.once("SIGINT", () => void shutdown());
-  process.once("SIGTERM", () => void shutdown());
+  const handleShutdownSignal = () => {
+    void shutdown().catch((error: unknown) => {
+      logError("mqtt_worker_shutdown_failed", { error: errorMessage(error) });
+      process.exitCode = 1;
+    });
+  };
+
+  process.once("SIGINT", handleShutdownSignal);
+  process.once("SIGTERM", handleShutdownSignal);
 
   return client;
 }
