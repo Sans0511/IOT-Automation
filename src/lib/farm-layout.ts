@@ -831,20 +831,34 @@ export function parseFarmConnections(
 
     const {
       id,
-      fromDeviceId,
-      fromBackgroundItemId,
-      fromBackgroundPort,
-      fromConnectionId,
-      fromPoint,
-      toDeviceId,
-      toBackgroundItemId,
-      toBackgroundPort,
-      toConnectionId,
-      toPoint,
-      fromPort,
-      toPort,
-      waypoints,
+      fromDeviceId: rawFromDeviceId,
+      fromBackgroundItemId: rawFromBackgroundItemId,
+      fromBackgroundPort: rawFromBackgroundPort,
+      fromConnectionId: rawFromConnectionId,
+      fromPoint: rawFromPoint,
+      toDeviceId: rawToDeviceId,
+      toBackgroundItemId: rawToBackgroundItemId,
+      toBackgroundPort: rawToBackgroundPort,
+      toConnectionId: rawToConnectionId,
+      toPoint: rawToPoint,
+      fromPort: rawFromPort,
+      toPort: rawToPort,
+      waypoints: rawWaypoints,
     } = entry;
+
+    const fromDeviceId = rawFromDeviceId ?? undefined;
+    const fromBackgroundItemId = rawFromBackgroundItemId ?? undefined;
+    const fromBackgroundPort = rawFromBackgroundPort ?? undefined;
+    const fromConnectionId = rawFromConnectionId ?? undefined;
+    const fromPoint = rawFromPoint ?? undefined;
+    const toDeviceId = rawToDeviceId ?? undefined;
+    const toBackgroundItemId = rawToBackgroundItemId ?? undefined;
+    const toBackgroundPort = rawToBackgroundPort ?? undefined;
+    const toConnectionId = rawToConnectionId ?? undefined;
+    const toPoint = rawToPoint ?? undefined;
+    const fromPort = rawFromPort ?? undefined;
+    const toPort = rawToPort ?? undefined;
+    const waypoints = rawWaypoints ?? undefined;
 
     if (
       typeof id !== "string" ||

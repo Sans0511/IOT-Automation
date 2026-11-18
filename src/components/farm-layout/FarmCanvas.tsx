@@ -204,7 +204,7 @@ function DeviceNode({
   );
   const moistureSensorImage = useCanvasImage(
     device.type === "MOISTURE_SENSOR"
-      ? "/background-items/moisture-detection-device-icon.svg"
+      ? "/background-items/moisture-detection-device-icon.svg?v=2"
       : null,
   );
   const rainDetectionImage = useCanvasImage(

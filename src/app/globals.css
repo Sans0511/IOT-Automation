@@ -73,9 +73,9 @@
 }
 
 :root {
-  --rain-width: 1.5px;
-  --rain-color: rgb(255 255 255 / 0.95);
-  --rain-glow: 0 0 8px rgb(22 101 52 / 0.55);
+  --rain-width: 1px;
+  --rain-color: rgb(56 189 248 / 0.95);
+  --rain-glow: 0 0 4px rgb(56 189 248 / 0.6);
   --rain-start-top: -12%;
   --rain-end-top: 112%;
   --rain-angle: 14deg;

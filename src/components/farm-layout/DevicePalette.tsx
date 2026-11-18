@@ -30,7 +30,7 @@ const PALETTE_COLORS: Record<string, string> = {
 const PRESET_ICONS: Partial<Record<FarmDevicePresetKey, string>> = {
   MOTOR_PUMP: "/background-items/motor-pump-icon.svg",
   SOLENOID_VALVE: "/background-items/solenoid-valve-icon.svg",
-  MOISTURE_SENSOR: "/background-items/moisture-detection-device-icon.svg",
+  MOISTURE_SENSOR: "/background-items/moisture-detection-device-icon.svg?v=2",
   RAIN_DETECTION: "/background-items/rain-detection-device-icon.svg",
 };
 

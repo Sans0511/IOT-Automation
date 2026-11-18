@@ -47,7 +47,7 @@ type ViewerProps = {
 const SNAP_DISTANCE = 40;
 const RAIN_DROP_DENSITY = 0.00024;
 const RAIN_DENSITY_SCALE = 0.8;
-const RAIN_SPEED_SCALE = 0.7;
+const RAIN_SPEED_SCALE = 0.5;
 
 function rainNoise(index: number, salt: number): number {
   const value = Math.sin(index * 12.9898 + salt * 78.233) * 43758.5453;
@@ -67,7 +67,7 @@ function createRainDrops(count: number) {
 const DEVICE_ICONS: Record<string, string> = {
   MOTOR_PUMP: "/background-items/motor-pump-icon.svg",
   SOLENOID_VALVE: "/background-items/solenoid-valve-icon.svg",
-  MOISTURE_SENSOR: "/background-items/moisture-detection-device-icon.svg",
+  MOISTURE_SENSOR: "/background-items/moisture-detection-device-icon.svg?v=2",
   RAIN_DETECTION: "/background-items/rain-detection-device-icon.svg",
 };
 
@@ -167,11 +167,11 @@ function MoistureGauge({ value }: { value: number }) {
         y1="36"
         x2={needleX}
         y2={needleY}
-        stroke="#ffffff"
+        stroke="#000000"
         strokeWidth="2"
         strokeLinecap="round"
       />
-      <circle cx="36" cy="36" r="3" fill="#ffffff" />
+      <circle cx="36" cy="36" r="3" fill="#000000" />
       <text
         x="36"
         y="49"
