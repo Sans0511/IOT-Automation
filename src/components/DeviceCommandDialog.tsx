@@ -37,26 +37,26 @@ export function DeviceCommandDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 p-4"
       role="presentation"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="device-command-title"
-        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900"
+        className="w-full max-w-md rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-xl"
       >
         <h3
           id="device-command-title"
-          className="text-lg font-semibold text-slate-900 dark:text-white"
+          className="text-lg font-semibold text-emerald-950"
         >
           Confirm manual control
         </h3>
-        <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+        <p className="mt-3 text-sm text-emerald-800">
           Turn <strong>{pending.device.name}</strong>{" "}
           <strong>{pending.command}</strong>?
         </p>
-        <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+        <p className="mt-2 text-xs text-emerald-700">
           This publishes a command to the device MQTT topic.
         </p>
 
@@ -74,7 +74,7 @@ export function DeviceCommandDialog({
             type="button"
             disabled={busy}
             onClick={onCancel}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Cancel
           </button>
@@ -84,8 +84,8 @@ export function DeviceCommandDialog({
             onClick={onConfirm}
             className={`rounded-lg px-4 py-2 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
               pending.command === "ON"
-                ? "bg-emerald-600 hover:bg-emerald-700"
-                : "bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600"
+                  ? "bg-emerald-600 hover:bg-emerald-700"
+                  : "bg-emerald-800 hover:bg-emerald-900"
             }`}
           >
             {busy ? "Sending..." : `Turn ${pending.command}`}
