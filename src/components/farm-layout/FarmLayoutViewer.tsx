@@ -471,6 +471,7 @@ function getDirectPumpState(
 function hasDownstreamConnection(
   connection: FarmLayoutConnection,
   connections: FarmLayoutConnection[],
+  endpoint: FarmPoint,
 ): boolean {
   return connections.some((candidate) => {
     if (candidate.id === connection.id) {
@@ -478,8 +479,12 @@ function hasDownstreamConnection(
     }
 
     if (
-      candidate.fromConnectionId === connection.id ||
-      candidate.toConnectionId === connection.id
+      candidate.fromConnectionId === connection.id &&
+      candidate.fromPoint &&
+      Math.hypot(
+        candidate.fromPoint.x - endpoint.x,
+        candidate.fromPoint.y - endpoint.y,
+      ) <= 8
     ) {
       return true;
     }
@@ -792,15 +797,21 @@ export default function FarmLayoutViewer({
             to.offset,
           );
 
+          const endpoint = {
+            x: points[points.length - 2],
+            y: points[points.length - 1],
+          };
+
           return {
             path: toPolyline(points),
             state: flowStates.get(connection.id) ?? "unknown",
-            endpoint: {
-              x: points[points.length - 2],
-              y: points[points.length - 1],
-            },
+            endpoint,
             terminal:
-              !hasDownstreamConnection(connection, layout.connections) &&
+              !hasDownstreamConnection(
+                connection,
+                layout.connections,
+                endpoint,
+              ) &&
               !isClosedValveEndpoint(
                 connection,
                 devicesById,
