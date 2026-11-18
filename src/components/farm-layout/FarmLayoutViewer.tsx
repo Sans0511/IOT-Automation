@@ -926,15 +926,15 @@ export default function FarmLayoutViewer({
 
   return (
     <div
-      className="relative w-full overflow-hidden rounded-xl border-2 border-emerald-500 bg-black"
+      className="relative w-full overflow-hidden rounded-xl border-2 border-emerald-500 bg-green-100"
       style={{ aspectRatio: `${layout.width} / ${layout.height}` }}
     >
       <div
         className="absolute inset-0"
         style={{
-          backgroundColor: "#000",
+          backgroundColor: "#dcfce7",
           backgroundImage:
-            "linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)",
+            "linear-gradient(to right, rgba(22,101,52,0.16) 1px, transparent 1px), linear-gradient(to bottom, rgba(22,101,52,0.16) 1px, transparent 1px)",
           backgroundSize: "40px 40px, 40px 40px",
           backgroundPosition: "center, center",
           backgroundRepeat: "repeat, repeat",
