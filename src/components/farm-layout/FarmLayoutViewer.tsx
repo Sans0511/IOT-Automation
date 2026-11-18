@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, useMemo } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { isControllableDeviceType } from "@/lib/device-control";
 import { RUNTIME_BADGE_CLASS } from "@/lib/runtime-status-ui";
 import {
@@ -802,6 +802,36 @@ export default function FarmLayoutViewer({
   telemetry,
   onDeviceDoubleClick,
 }: ViewerProps) {
+  const layoutRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === layoutRef.current);
+    };
+
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    const node = layoutRef.current;
+
+    if (!node) {
+      return;
+    }
+
+    try {
+      if (document.fullscreenElement === node) {
+        await document.exitFullscreen();
+      } else {
+        await node.requestFullscreen();
+      }
+    } catch {
+      return;
+    }
+  };
+
   const placementsById = useMemo(
     () => new Map(layout.placements.map((placement) => [placement.deviceId, placement])),
     [layout.placements],
@@ -927,9 +957,53 @@ export default function FarmLayoutViewer({
 
   return (
     <div
-      className="relative w-full overflow-hidden rounded-xl border-2 border-emerald-500 bg-green-100"
+      ref={layoutRef}
+      className="layout-fullscreen relative w-full overflow-hidden rounded-xl border-2 border-emerald-500 bg-green-100"
       style={{ aspectRatio: `${layout.width} / ${layout.height}` }}
     >
+      <button
+        type="button"
+        onClick={() => void toggleFullscreen()}
+        aria-label={isFullscreen ? "Exit full screen" : "View full screen"}
+        aria-pressed={isFullscreen}
+        title={isFullscreen ? "Exit full screen" : "View full screen"}
+        className="absolute right-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-300 bg-white/95 text-emerald-800 shadow-md transition hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+      >
+        {isFullscreen ? (
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-5 w-5"
+          >
+            <path d="M9 3v6H3" />
+            <path d="M15 3v6h6" />
+            <path d="M9 21v-6H3" />
+            <path d="M15 21v-6h6" />
+          </svg>
+        ) : (
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-5 w-5"
+          >
+            <path d="M3 9V3h6" />
+            <path d="M21 9V3h-6" />
+            <path d="M3 15v6h6" />
+            <path d="M21 15v6h-6" />
+          </svg>
+        )}
+      </button>
+
       <div
         className="absolute inset-0"
         style={{
