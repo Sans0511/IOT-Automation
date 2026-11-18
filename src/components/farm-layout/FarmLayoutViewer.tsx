@@ -2,12 +2,12 @@
 
 import { type CSSProperties, useMemo } from "react";
 import { isControllableDeviceType } from "@/lib/device-control";
+import { RUNTIME_BADGE_CLASS } from "@/lib/runtime-status-ui";
 import {
   getMoisturePercent,
   isRainDeviceType,
   resolveDeviceRuntimeStatus,
   type DeviceMessageEnvelope,
-  type DeviceRuntimeState,
   type DeviceRuntimeStatus,
 } from "@/lib/telemetry";
 import {
@@ -111,18 +111,6 @@ const FLOW_STYLES: Record<
     opacity: 0.08,
     animate: false,
   },
-};
-
-const STATUS_STYLES: Record<DeviceRuntimeState, string> = {
-  RUNNING: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300",
-  RAINING: "bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300",
-  OPEN: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300",
-  STOPPED: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
-  CLOSED: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
-  ONLINE: "bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300",
-  OFFLINE: "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300",
-  STALE: "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300",
-  "NO DATA": "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
 };
 
 function MoistureGauge({ value }: { value: number }) {
@@ -1137,11 +1125,7 @@ export default function FarmLayoutViewer({
               transform: `translate(-50%, -50%) rotate(${placement.rotation}deg)`,
             }}
           >
-            <span
-              className={`max-w-28 truncate rounded bg-white/90 px-1 text-[10px] font-medium text-slate-700 shadow-sm ${
-                runtime?.active ? "mb-4" : "mb-1"
-              }`}
-            >
+            <span className="mb-4 max-w-28 truncate rounded bg-white/90 px-1 text-[10px] font-medium text-slate-700 shadow-sm">
               {label}
             </span>
             <span className="relative flex h-10 w-10 items-center justify-center">
@@ -1171,9 +1155,7 @@ export default function FarmLayoutViewer({
               </span>
             </span>
             <span
-              className={`rounded px-1.5 py-0.5 text-[9px] font-semibold shadow-sm ${
-                runtime?.active ? "mt-4" : "mt-0.5"
-              } ${STATUS_STYLES[runtimeState]}`}
+              className={`mt-4 inline-flex w-20 items-center justify-center rounded px-1.5 py-0.5 text-[9px] font-semibold shadow-sm ${RUNTIME_BADGE_CLASS[runtimeState]}`}
             >
               {runtimeState}
             </span>
@@ -1190,7 +1172,7 @@ export default function FarmLayoutViewer({
           {rainDrops.map((drop, index) => (
             <span
               key={index}
-              className="rain-drop absolute -top-16 w-[1.5px] rounded-full bg-blue-400/95 shadow-[0_0_8px_rgba(59,130,246,0.95)]"
+              className="rain-drop absolute rounded-full"
               style={
                 {
                   left: drop.left,

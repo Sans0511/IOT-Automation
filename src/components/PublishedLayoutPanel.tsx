@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DeviceCommandDialog } from "@/components/DeviceCommandDialog";
 import { DeviceControls } from "@/components/DeviceControls";
 import {
@@ -48,12 +48,30 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
   const [commandError, setCommandError] = useState<string | null>(null);
   const [commandNotice, setCommandNotice] = useState<string | null>(null);
 
+  const previousFarmIdRef = useRef(farmId);
+
+  useEffect(() => {
+    if (previousFarmIdRef.current === farmId) {
+      return;
+    }
+
+    previousFarmIdRef.current = farmId;
+    setStatuses(farm?.statuses ?? {});
+    setTelemetry({});
+  }, [farmId, farm?.statuses]);
+
   useEffect(() => {
     if (!farmId) {
       return;
     }
 
+    const initialReconnectDelayMs = 500;
+    const maxReconnectDelayMs = 30_000;
+    const activeFarmId = farmId;
     let disposed = false;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempts = 0;
     const configuredUrl = process.env.NEXT_PUBLIC_WS_URL;
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const baseUrl = (
@@ -61,85 +79,143 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
     )
       .trim()
       .replace(/\/$/, "");
-    const socket = new WebSocket(
-      `${baseUrl}/ws?farmId=${encodeURIComponent(farmId)}&deviceId=all`,
-    );
 
-    socket.onopen = () => {
-      if (!disposed) {
-        setStatusConnection("connecting");
-      }
-    };
-
-    socket.onerror = () => {
-      if (!disposed) {
-        setStatusConnection("reconnecting");
-      }
-    };
-
-    socket.onclose = () => {
-      if (!disposed) {
-        setStatusConnection("reconnecting");
-      }
-    };
-
-    socket.onmessage = (event) => {
+    function connect() {
       if (disposed) {
         return;
       }
 
-      try {
-        const frame: unknown = JSON.parse(event.data as string);
+      let retryScheduled = false;
+      let currentSocket: WebSocket | null = null;
 
-        if (typeof frame !== "object" || frame === null) {
+      const scheduleReconnect = () => {
+        if (disposed || retryScheduled) {
           return;
         }
 
-        const candidate = frame as { type?: unknown; data?: unknown };
+        retryScheduled = true;
+        setStatusConnection("reconnecting");
 
-        if (candidate.type === "ready") {
-          setStatusConnection("connected");
-          return;
-        }
-
-        if (
-          (candidate.type !== "status" && candidate.type !== "telemetry") ||
-          typeof candidate.data !== "object" ||
-          candidate.data === null
-        ) {
-          return;
-        }
-
-        const envelope = parseDeviceMessageEnvelope(
-          JSON.stringify(candidate.data),
+        const delay = Math.min(
+          maxReconnectDelayMs,
+          initialReconnectDelayMs * 2 ** Math.min(reconnectAttempts, 20),
         );
+        reconnectAttempts = Math.min(reconnectAttempts + 1, 20);
 
-        if (
-          !envelope ||
-          envelope.farmId !== farmId ||
-          envelope.kind !== candidate.type
-        ) {
-          return;
-        }
+        currentSocket?.close();
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          connect();
+        }, delay);
+      };
 
-        const update = (current: StatusMap) => ({
-          ...current,
-          [envelope.deviceId]: envelope,
-        });
-
-        if (candidate.type === "status") {
-          setStatuses(update);
-        } else {
-          setTelemetry(update);
-        }
+      try {
+        currentSocket = new WebSocket(
+          `${baseUrl}/ws?farmId=${encodeURIComponent(activeFarmId)}&deviceId=all`,
+        );
       } catch {
+        scheduleReconnect();
         return;
       }
-    };
+
+      const activeSocket = currentSocket;
+      socket = activeSocket;
+
+      activeSocket.onopen = () => {
+        if (disposed || socket !== activeSocket) {
+          return;
+        }
+
+        reconnectAttempts = 0;
+        setStatusConnection("connecting");
+      };
+
+      activeSocket.onerror = () => {
+        if (disposed || socket !== activeSocket) {
+          return;
+        }
+
+        setStatusConnection("reconnecting");
+        scheduleReconnect();
+      };
+
+      activeSocket.onclose = () => {
+        if (disposed || socket !== activeSocket) {
+          return;
+        }
+
+        setStatusConnection("reconnecting");
+        scheduleReconnect();
+      };
+
+      activeSocket.onmessage = (event) => {
+        if (disposed || socket !== activeSocket) {
+          return;
+        }
+
+        try {
+          const frame: unknown = JSON.parse(event.data as string);
+
+          if (typeof frame !== "object" || frame === null) {
+            return;
+          }
+
+          const candidate = frame as { type?: unknown; data?: unknown };
+
+          if (candidate.type === "ready") {
+            reconnectAttempts = 0;
+            setStatusConnection("connected");
+            return;
+          }
+
+          if (
+            (candidate.type !== "status" && candidate.type !== "telemetry") ||
+            typeof candidate.data !== "object" ||
+            candidate.data === null
+          ) {
+            return;
+          }
+
+          const envelope = parseDeviceMessageEnvelope(
+            JSON.stringify(candidate.data),
+          );
+
+          if (
+            !envelope ||
+            envelope.farmId !== farmId ||
+            envelope.kind !== candidate.type
+          ) {
+            return;
+          }
+
+          const update = (current: StatusMap) => ({
+            ...current,
+            [envelope.deviceId]: envelope,
+          });
+
+          if (candidate.type === "status") {
+            setStatuses(update);
+          } else {
+            setTelemetry(update);
+          }
+        } catch {
+          return;
+        }
+      };
+    }
+
+    connect();
 
     return () => {
       disposed = true;
-      socket.close();
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (socket) {
+        socket.close();
+        socket = null;
+      }
     };
   }, [farmId]);
 

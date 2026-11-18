@@ -1,6 +1,11 @@
 import type { Role } from "@prisma/client";
-import jwt from "jsonwebtoken";
 import type { NextRequest } from "next/server";
+import {
+  ACCESS_AUDIENCE,
+  ACCESS_TOKEN_MAX_AGE_SECONDS,
+  type AccessTokenPayload,
+  verifyToken,
+} from "@/lib/jwt";
 
 export interface AuthenticatedUser {
   id: string;
@@ -9,33 +14,28 @@ export interface AuthenticatedUser {
 }
 
 export function verifyAccessToken(token: string): AuthenticatedUser | null {
-  const secret = process.env.JWT_ACCESS_SECRET;
+  const payload = verifyToken<AccessTokenPayload>(
+    token,
+    process.env.JWT_ACCESS_SECRET,
+    ACCESS_AUDIENCE,
+    ACCESS_TOKEN_MAX_AGE_SECONDS,
+  );
 
-  if (!token || !secret) {
+  if (
+    !payload ||
+    payload.type !== "access" ||
+    typeof payload.sub !== "string" ||
+    typeof payload.email !== "string" ||
+    (payload.role !== "ADMIN" && payload.role !== "USER")
+  ) {
     return null;
   }
 
-  try {
-    const payload = jwt.verify(token, secret);
-
-    if (
-      typeof payload === "string" ||
-      payload.type !== "access" ||
-      typeof payload.sub !== "string" ||
-      typeof payload.email !== "string" ||
-      (payload.role !== "ADMIN" && payload.role !== "USER")
-    ) {
-      return null;
-    }
-
-    return {
-      id: payload.sub,
-      email: payload.email,
-      role: payload.role,
-    };
-  } catch {
-    return null;
-  }
+  return {
+    id: payload.sub,
+    email: payload.email,
+    role: payload.role,
+  };
 }
 
 function readCookie(cookieHeader: string, name: string): string | null {

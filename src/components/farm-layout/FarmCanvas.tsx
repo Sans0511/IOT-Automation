@@ -1,7 +1,14 @@
 "use client";
 
 import Konva from "konva";
-import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent as ReactDragEvent,
+} from "react";
 import {
   Circle,
   Group,
@@ -20,6 +27,7 @@ import {
   DEVICE_PRESET_DRAG_TYPE,
   DEVICE_TYPE_LABELS,
   FARM_BACKGROUND_ITEM_TYPES,
+  FARM_BACKGROUND_LABELS,
   FARM_CANVAS_HEIGHT,
   FARM_CANVAS_WIDTH,
   FARM_LAYOUT_GRID,
@@ -100,6 +108,19 @@ const DEVICE_COLORS: Record<string, string> = {
   SOLENOID_VALVE: "#ea580c",
   RAIN_DETECTION: "#0ea5e9",
   SMART_IRRIGATION_CONTROLLER: "#4f46e5",
+};
+
+const VISUALLY_HIDDEN_STYLE: CSSProperties = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: "hidden",
+  clipPath: "inset(50%)",
+  whiteSpace: "nowrap",
+  border: 0,
+  pointerEvents: "none",
 };
 
 function clamp(value: number, max: number): number {
@@ -475,6 +496,40 @@ export default function FarmCanvas({
   const backgroundItemsById = useMemo(
     () => new Map(backgroundItems.map((item) => [item.id, item])),
     [backgroundItems],
+  );
+  const verticalGridLines = useMemo(
+    () =>
+      Array.from({ length: Math.floor(width / FARM_LAYOUT_GRID) + 1 }, (_, index) => (
+        <Line
+          key={`vertical-${index}`}
+          points={[
+            index * FARM_LAYOUT_GRID,
+            0,
+            index * FARM_LAYOUT_GRID,
+            height,
+          ]}
+          stroke="#315f2c"
+          strokeWidth={1}
+        />
+      )),
+    [height, width],
+  );
+  const horizontalGridLines = useMemo(
+    () =>
+      Array.from({ length: Math.floor(height / FARM_LAYOUT_GRID) + 1 }, (_, index) => (
+        <Line
+          key={`horizontal-${index}`}
+          points={[
+            0,
+            index * FARM_LAYOUT_GRID,
+            width,
+            index * FARM_LAYOUT_GRID,
+          ]}
+          stroke="#315f2c"
+          strokeWidth={1}
+        />
+      )),
+    [height, width],
   );
   const selectedConnection =
     connections.find((connection) => connection.id === selectedConnectionId) ??
@@ -940,36 +995,8 @@ export default function FarmCanvas({
           />
           {snapToGrid ? (
             <Group listening={false} opacity={0.18}>
-              {Array.from({ length: Math.floor(width / FARM_LAYOUT_GRID) + 1 }).map(
-                (_, index) => (
-                  <Line
-                    key={`vertical-${index}`}
-                    points={[
-                      index * FARM_LAYOUT_GRID,
-                      0,
-                      index * FARM_LAYOUT_GRID,
-                      height,
-                    ]}
-                    stroke="#315f2c"
-                    strokeWidth={1}
-                  />
-                ),
-              )}
-              {Array.from({ length: Math.floor(height / FARM_LAYOUT_GRID) + 1 }).map(
-                (_, index) => (
-                  <Line
-                    key={`horizontal-${index}`}
-                    points={[
-                      0,
-                      index * FARM_LAYOUT_GRID,
-                      width,
-                      index * FARM_LAYOUT_GRID,
-                    ]}
-                    stroke="#315f2c"
-                    strokeWidth={1}
-                  />
-                ),
-              )}
+              {verticalGridLines}
+              {horizontalGridLines}
             </Group>
           ) : null}
           {alignmentGuides.vertical !== null ? (
@@ -1187,6 +1214,50 @@ export default function FarmCanvas({
             : null}
         </Layer>
       </Stage>
+      <div
+        role="group"
+        aria-label="Farm layout items"
+        style={VISUALLY_HIDDEN_STYLE}
+      >
+        <ul>
+          {placements.map((placement) => {
+            const device = devicesById.get(placement.deviceId);
+
+            if (!device) {
+              return null;
+            }
+
+            const label = placement.label || device.name;
+
+            return (
+              <li key={placement.deviceId}>
+                <button
+                  type="button"
+                  aria-label={`Select device ${label}`}
+                  onClick={() => onSelect(device.id)}
+                >
+                  {label}
+                </button>
+              </li>
+            );
+          })}
+          {backgroundItems.map((item) => {
+            const label = FARM_BACKGROUND_LABELS[item.type];
+
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  aria-label={`Select background item ${label}`}
+                  onClick={() => onSelectBackgroundItem(item.id)}
+                >
+                  {label}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }

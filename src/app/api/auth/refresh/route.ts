@@ -1,28 +1,22 @@
-import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 import { NextResponse, type NextRequest } from "next/server";
 import { unauthorizedResponse } from "@/lib/api-helpers";
+import {
+  ACCESS_TOKEN_MAX_AGE_SECONDS,
+  REFRESH_AUDIENCE,
+  REFRESH_TOKEN_TTL_SECONDS,
+  type RefreshTokenPayload,
+  signAccessToken,
+  signRefreshToken,
+  verifyToken,
+} from "@/lib/jwt";
 import { prisma } from "@/lib/prisma";
-import { getRefreshToken, storeRefreshToken } from "@/lib/redis";
-
-const ACCESS_TOKEN_TTL = "15m" as const;
-const ACCESS_TOKEN_MAX_AGE = 15 * 60;
-const REFRESH_TOKEN_TTL = "7d" as const;
-const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
-
-function getSecret(name: "JWT_ACCESS_SECRET" | "JWT_REFRESH_SECRET"): string {
-  const secret = process.env[name];
-
-  if (!secret) {
-    throw new Error(`${name} is not configured`);
-  }
-
-  return secret;
-}
-
-interface RefreshTokenPayload extends JwtPayload {
-  sub: string;
-  type: "refresh";
-}
+import {
+  getRefreshSession,
+  hashRefreshToken,
+  refreshTokenHashMatches,
+  revokeRefreshFamily,
+  storeRefreshSession,
+} from "@/lib/redis";
 
 export async function POST(request: NextRequest) {
   const token = request.cookies.get("refresh_token")?.value;
@@ -32,19 +26,30 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const payload = jwt.verify(token, getSecret("JWT_REFRESH_SECRET"));
+    const payload = verifyToken<RefreshTokenPayload>(
+      token,
+      process.env.JWT_REFRESH_SECRET,
+      REFRESH_AUDIENCE,
+      REFRESH_TOKEN_TTL_SECONDS,
+    );
 
     if (
-      typeof payload === "string" ||
+      !payload ||
       payload.type !== "refresh" ||
-      typeof payload.sub !== "string"
+      typeof payload.sub !== "string" ||
+      typeof payload.familyId !== "string"
     ) {
       return unauthorizedResponse();
     }
 
-    const storedToken = await getRefreshToken(payload.sub);
+    const session = await getRefreshSession(payload.sub);
 
-    if (storedToken !== token) {
+    if (!session || session.familyId !== payload.familyId) {
+      return unauthorizedResponse();
+    }
+
+    if (!refreshTokenHashMatches(token, session.tokenHash)) {
+      await revokeRefreshFamily(payload.familyId);
       return unauthorizedResponse();
     }
 
@@ -57,23 +62,22 @@ export async function POST(request: NextRequest) {
       return unauthorizedResponse();
     }
 
-    const accessToken = jwt.sign(
-      {
-        sub: user.id,
-        email: user.email,
-        role: user.role,
-        type: "access",
-      },
-      getSecret("JWT_ACCESS_SECRET"),
-      { expiresIn: ACCESS_TOKEN_TTL } satisfies SignOptions,
-    );
-    const refreshToken = jwt.sign(
-      { sub: user.id, type: "refresh" } satisfies RefreshTokenPayload,
-      getSecret("JWT_REFRESH_SECRET"),
-      { expiresIn: REFRESH_TOKEN_TTL } satisfies SignOptions,
-    );
+    const accessToken = signAccessToken({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    });
+    const refreshToken = signRefreshToken({
+      sub: user.id,
+      familyId: payload.familyId,
+    });
 
-    await storeRefreshToken(user.id, refreshToken, REFRESH_TOKEN_TTL_SECONDS);
+    await storeRefreshSession(user.id, {
+      tokenHash: hashRefreshToken(refreshToken),
+      familyId: payload.familyId,
+      expiresAtSeconds:
+        Math.floor(Date.now() / 1000) + REFRESH_TOKEN_TTL_SECONDS,
+    });
 
     const response = NextResponse.json({ ok: true });
 
@@ -82,7 +86,7 @@ export async function POST(request: NextRequest) {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: ACCESS_TOKEN_MAX_AGE,
+      maxAge: ACCESS_TOKEN_MAX_AGE_SECONDS,
     });
     response.cookies.set("refresh_token", refreshToken, {
       httpOnly: true,

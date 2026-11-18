@@ -13,7 +13,7 @@ import {
 import { sendDeviceCommand } from "@/lib/mqttClient";
 import { prisma } from "@/lib/prisma";
 import { cacheDeviceStatus, publishDeviceStatus } from "@/lib/redis";
-import { COMMAND_STATUS_FRESH_MS } from "@/lib/telemetry";
+import { COMMAND_STATUS_FRESH_MS, millisecondsToSeconds } from "@/lib/freshness";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     await cacheDeviceStatus(
       statusEnvelope,
-      Math.ceil(COMMAND_STATUS_FRESH_MS / 1000),
+      millisecondsToSeconds(COMMAND_STATUS_FRESH_MS),
     );
     await publishDeviceStatus(statusEnvelope);
 

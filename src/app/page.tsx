@@ -14,10 +14,8 @@ export default async function Home() {
   const publishedLayouts = user
     ? await getPublishedLayoutsByEmail(user.email)
     : null;
-  const farm =
-    publishedLayouts?.farms.find((item) => item.name === "Pranithi Farms") ??
-    null;
-  const farmName = farm?.name ?? "Pranithi Farms";
+  const farm = publishedLayouts?.farms[0] ?? null;
+  const farmName = farm?.name ?? "No published farm";
 
   return (
     <main className="flex min-h-screen flex-1 bg-zinc-50 font-sans dark:bg-black">
