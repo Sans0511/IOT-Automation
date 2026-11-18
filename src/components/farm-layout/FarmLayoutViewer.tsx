@@ -106,6 +106,78 @@ const STATUS_STYLES: Record<DeviceRuntimeState, string> = {
   "NO DATA": "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
 };
 
+function MoistureGauge({ value }: { value: number }) {
+  const angle = Math.PI - (value / 100) * Math.PI;
+  const needleX = 36 + Math.cos(angle) * 23;
+  const needleY = 36 - Math.sin(angle) * 23;
+  const arc = "M 8 36 A 28 28 0 0 1 64 36";
+
+  return (
+    <svg
+      className="mt-1"
+      width="72"
+      height="50"
+      viewBox="0 0 72 50"
+      role="img"
+      aria-label={`Soil moisture ${value}%`}
+    >
+      <path
+        d={arc}
+        fill="none"
+        stroke="#e2e8f0"
+        strokeWidth="6"
+        strokeLinecap="round"
+      />
+      <path
+        d={arc}
+        pathLength={100}
+        fill="none"
+        stroke="#ef4444"
+        strokeWidth="6"
+        strokeDasharray="30 70"
+      />
+      <path
+        d={arc}
+        pathLength={100}
+        fill="none"
+        stroke="#f59e0b"
+        strokeWidth="6"
+        strokeDasharray="30 70"
+        strokeDashoffset="-30"
+      />
+      <path
+        d={arc}
+        pathLength={100}
+        fill="none"
+        stroke="#22c55e"
+        strokeWidth="6"
+        strokeDasharray="40 60"
+        strokeDashoffset="-60"
+      />
+      <line
+        x1="36"
+        y1="36"
+        x2={needleX}
+        y2={needleY}
+        stroke="#0f172a"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <circle cx="36" cy="36" r="3" fill="#0f172a" />
+      <text
+        x="36"
+        y="49"
+        textAnchor="middle"
+        fontSize="10"
+        fontWeight="700"
+        fill="#0369a1"
+      >
+        {value}%
+      </text>
+    </svg>
+  );
+}
+
 function direction(from: FarmPoint, to: FarmPoint): FarmPoint {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -1062,14 +1134,7 @@ export default function FarmLayoutViewer({
             >
               {runtimeState}
             </span>
-            {moisture !== null ? (
-              <span
-                className="mt-1 rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm"
-                title="Soil moisture"
-              >
-                {moisture}%
-              </span>
-            ) : null}
+            {moisture !== null ? <MoistureGauge value={moisture} /> : null}
           </div>
         );
       })}
