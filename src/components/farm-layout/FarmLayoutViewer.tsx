@@ -29,7 +29,12 @@ import {
 type ResolvedEndpoint = { point: FarmPoint; offset: number };
 type StatusMap = Record<string, DeviceMessageEnvelope>;
 type FlowState = "active" | "inactive" | "unknown";
-type FlowVisual = { path: string; state: FlowState };
+type FlowVisual = {
+  path: string;
+  state: FlowState;
+  endpoint: FarmPoint;
+  terminal: boolean;
+};
 
 type ViewerProps = {
   layout: FarmLayoutData;
@@ -463,6 +468,70 @@ function getDirectPumpState(
     : "inactive";
 }
 
+function hasDownstreamConnection(
+  connection: FarmLayoutConnection,
+  connections: FarmLayoutConnection[],
+): boolean {
+  return connections.some((candidate) => {
+    if (candidate.id === connection.id) {
+      return false;
+    }
+
+    if (
+      candidate.fromConnectionId === connection.id ||
+      candidate.toConnectionId === connection.id
+    ) {
+      return true;
+    }
+
+    if (
+      connection.toBackgroundItemId &&
+      candidate.fromBackgroundItemId === connection.toBackgroundItemId &&
+      candidate.fromBackgroundPort === connection.toBackgroundPort
+    ) {
+      return true;
+    }
+
+    if (
+      connection.toDeviceId &&
+      candidate.fromDeviceId === connection.toDeviceId
+    ) {
+      return true;
+    }
+
+    if (
+      connection.toConnectionId &&
+      candidate.fromConnectionId === connection.toConnectionId
+    ) {
+      return true;
+    }
+
+    return false;
+  });
+}
+
+function isClosedValveEndpoint(
+  connection: FarmLayoutConnection,
+  devicesById: Map<string, FarmLayoutDevice>,
+  runtimeByDevice: Map<string, DeviceRuntimeStatus>,
+  statuses: StatusMap,
+): boolean {
+  if (!connection.toDeviceId) {
+    return false;
+  }
+
+  const type = devicesById.get(connection.toDeviceId)?.type ?? "";
+
+  if (!isValveType(type)) {
+    return false;
+  }
+
+  return (
+    !statuses[connection.toDeviceId] ||
+    runtimeByDevice.get(connection.toDeviceId)?.active !== true
+  );
+}
+
 function resolveFlowStates(
   connections: FarmLayoutConnection[],
   devicesById: Map<string, FarmLayoutDevice>,
@@ -715,21 +784,41 @@ export default function FarmLayoutViewer({
             return null;
           }
 
+          const points = buildFlowPoints(
+            from.point,
+            to.point,
+            connection.waypoints ?? [],
+            from.offset,
+            to.offset,
+          );
+
           return {
-            path: toPolyline(
-              buildFlowPoints(
-                from.point,
-                to.point,
-                connection.waypoints ?? [],
-                from.offset,
-                to.offset,
-              ),
-            ),
+            path: toPolyline(points),
             state: flowStates.get(connection.id) ?? "unknown",
+            endpoint: {
+              x: points[points.length - 2],
+              y: points[points.length - 1],
+            },
+            terminal:
+              !hasDownstreamConnection(connection, layout.connections) &&
+              !isClosedValveEndpoint(
+                connection,
+                devicesById,
+                runtimeByDevice,
+                statuses,
+              ),
           };
         })
         .filter((visual): visual is FlowVisual => visual !== null),
-    [flowStates, itemsById, layout.connections, placementsById],
+    [
+      devicesById,
+      flowStates,
+      itemsById,
+      layout.connections,
+      placementsById,
+      runtimeByDevice,
+      statuses,
+    ],
   );
 
   return (
@@ -793,6 +882,69 @@ export default function FarmLayoutViewer({
                   />
                 ) : null}
               </polyline>
+            </g>
+          );
+        })}
+        {flowVisuals.map((visual, index) => {
+          if (visual.state !== "active" || !visual.terminal) {
+            return null;
+          }
+
+          const { x, y } = visual.endpoint;
+
+          return (
+            <g key={`water-${index}`} pointerEvents="none">
+              <circle cx={x} cy={y} r={4} fill="#38bdf8" opacity={0.8}>
+                <animate
+                  attributeName="r"
+                  values="4;13;18"
+                  dur="1.2s"
+                  repeatCount="indefinite"
+                />
+                <animate
+                  attributeName="opacity"
+                  values="0.8;0.25;0"
+                  dur="1.2s"
+                  repeatCount="indefinite"
+                />
+              </circle>
+              {[-8, 0, 8].map((offset, dropletIndex) => {
+                const duration = `${0.9 + dropletIndex * 0.15}s`;
+                const begin = `${dropletIndex * 0.2}s`;
+
+                return (
+                  <circle
+                    key={offset}
+                    cx={x + offset}
+                    cy={y - 2}
+                    r={2.5}
+                    fill="#0ea5e9"
+                    opacity={0.9}
+                  >
+                    <animate
+                      attributeName="cy"
+                      values={`${y - 2};${y - 18}`}
+                      dur={duration}
+                      begin={begin}
+                      repeatCount="indefinite"
+                    />
+                    <animate
+                      attributeName="cx"
+                      values={`${x + offset};${x + offset * 1.6}`}
+                      dur={duration}
+                      begin={begin}
+                      repeatCount="indefinite"
+                    />
+                    <animate
+                      attributeName="opacity"
+                      values="0.9;0"
+                      dur={duration}
+                      begin={begin}
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+                );
+              })}
             </g>
           );
         })}
