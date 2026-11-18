@@ -48,6 +48,7 @@ const SNAP_DISTANCE = 40;
 const RAIN_DROP_DENSITY = 0.00024;
 const RAIN_DENSITY_SCALE = 0.8;
 const RAIN_SPEED_SCALE = 0.5;
+const RAIN_LENGTH_SCALE = 0.5;
 
 function rainNoise(index: number, salt: number): number {
   const value = Math.sin(index * 12.9898 + salt * 78.233) * 43758.5453;
@@ -59,7 +60,7 @@ function createRainDrops(count: number) {
     left: `${rainNoise(index, 1) * 100}%`,
     delay: `${rainNoise(index, 2) * -2}s`,
     duration: `${(0.7 + rainNoise(index, 3) * 0.8) / RAIN_SPEED_SCALE}s`,
-    height: `${24 + rainNoise(index, 4) * 28}px`,
+    height: `${(24 + rainNoise(index, 4) * 28) * RAIN_LENGTH_SCALE}px`,
     opacity: 0.75 + rainNoise(index, 5) * 0.25,
   }));
 }
