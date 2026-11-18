@@ -1,5 +1,19 @@
 "use client";
 
+import {
+  DEVICE_TYPE_LABELS,
+  FARM_BACKGROUND_LABELS,
+  FARM_CANVAS_HEIGHT,
+  FARM_CANVAS_WIDTH,
+  type BackgroundItemPatch,
+  type FarmLayoutBackgroundItem,
+  type FarmLayoutConnection,
+  type FarmLayoutDevice,
+  type FarmLayoutPlacement,
+  type PlacementPatch,
+} from "@/lib/farm-layout";
+import { connectionLabel, endpointPortLabel } from "./flow-utils";
+
 type EditorToolbarProps = {
   isDirty: boolean;
   placementCount: number;
@@ -16,6 +30,17 @@ type EditorToolbarProps = {
   publishing: boolean;
   error: string | null;
   message: string | null;
+  selectedConnection: FarmLayoutConnection | null;
+  selectedBackgroundItem: FarmLayoutBackgroundItem | null;
+  selectedDevice: FarmLayoutDevice | null;
+  selectedPlacement: FarmLayoutPlacement | null;
+  backgroundItems: FarmLayoutBackgroundItem[];
+  devicesById: Map<string, FarmLayoutDevice>;
+  onPatchBackgroundItem: (patch: BackgroundItemPatch) => void;
+  onRemoveBackgroundItem: () => void;
+  onPatchPlacement: (patch: PlacementPatch) => void;
+  onRemoveDevice: () => void;
+  onDeleteSelected: () => void;
   onToggleSnap: () => void;
   onCopy: () => void;
   onPaste: () => void;
@@ -31,6 +56,11 @@ type EditorToolbarProps = {
   onPublish: () => void;
   onSave: () => void;
 };
+
+const FIELD_CLASS =
+  "w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white";
+const REMOVE_CLASS =
+  "rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40";
 
 export default function EditorToolbar({
   isDirty,
@@ -48,6 +78,17 @@ export default function EditorToolbar({
   publishing,
   error,
   message,
+  selectedConnection,
+  selectedBackgroundItem,
+  selectedDevice,
+  selectedPlacement,
+  backgroundItems,
+  devicesById,
+  onPatchBackgroundItem,
+  onRemoveBackgroundItem,
+  onPatchPlacement,
+  onRemoveDevice,
+  onDeleteSelected,
   onToggleSnap,
   onCopy,
   onPaste,
@@ -63,9 +104,212 @@ export default function EditorToolbar({
   onPublish,
   onSave,
 }: EditorToolbarProps) {
+  function renderInspector() {
+    if (selectedConnection) {
+      return (
+        <>
+          <div className="min-w-[240px] flex-1">
+            <p className="text-xs font-medium text-slate-700 dark:text-slate-200">
+              {connectionLabel(
+                selectedConnection,
+                "from",
+                devicesById,
+                backgroundItems,
+              )}
+              <span className="mx-2 text-sky-600 dark:text-sky-400">→</span>
+              {connectionLabel(
+                selectedConnection,
+                "to",
+                devicesById,
+                backgroundItems,
+              )}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+              {endpointPortLabel(selectedConnection, "from")}
+              <span className="mx-2">→</span>
+              {endpointPortLabel(selectedConnection, "to")}
+            </p>
+          </div>
+          <button type="button" onClick={onDeleteSelected} className={REMOVE_CLASS}>
+            Remove link
+          </button>
+        </>
+      );
+    }
+
+    if (selectedBackgroundItem) {
+      return (
+        <>
+          <div className="min-w-[280px] flex-1">
+            <p className="text-xs font-medium text-slate-700 dark:text-slate-200">
+              {FARM_BACKGROUND_LABELS[selectedBackgroundItem.type]}
+            </p>
+          </div>
+          <label className="w-20">
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              X
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={FARM_CANVAS_WIDTH}
+              value={selectedBackgroundItem.x}
+              onChange={(event) =>
+                onPatchBackgroundItem({ x: Number(event.target.value) })
+              }
+              className={FIELD_CLASS}
+            />
+          </label>
+          <label className="w-20">
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              Y
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={FARM_CANVAS_HEIGHT}
+              value={selectedBackgroundItem.y}
+              onChange={(event) =>
+                onPatchBackgroundItem({ y: Number(event.target.value) })
+              }
+              className={FIELD_CLASS}
+            />
+          </label>
+          <label className="w-20">
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              Rotation
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={359}
+              value={selectedBackgroundItem.rotation}
+              onChange={(event) =>
+                onPatchBackgroundItem({ rotation: Number(event.target.value) })
+              }
+              className={FIELD_CLASS}
+            />
+          </label>
+          <label className="w-28">
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              Size
+            </span>
+            <input
+              type="range"
+              min={0.5}
+              max={2}
+              step={0.1}
+              value={selectedBackgroundItem.scale}
+              onChange={(event) =>
+                onPatchBackgroundItem({ scale: Number(event.target.value) })
+              }
+              className="w-full accent-emerald-600"
+            />
+          </label>
+          <button type="button" onClick={onRemoveBackgroundItem} className={REMOVE_CLASS}>
+            Remove item
+          </button>
+        </>
+      );
+    }
+
+    if (selectedDevice && selectedPlacement) {
+      return (
+        <>
+          <div className="min-w-[180px] flex-1">
+            <p className="text-xs font-medium text-slate-700 dark:text-slate-200">
+              {selectedDevice.name}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+              {DEVICE_TYPE_LABELS[selectedDevice.type] ?? selectedDevice.type}
+            </p>
+          </div>
+          <label className="w-44">
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              Canvas label
+            </span>
+            <input
+              value={selectedPlacement.label ?? ""}
+              onChange={(event) =>
+                onPatchPlacement({
+                  label: event.target.value.trim() ? event.target.value : null,
+                })
+              }
+              placeholder={selectedDevice.name}
+              className={FIELD_CLASS}
+            />
+          </label>
+          <label className="w-20">
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              X
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={FARM_CANVAS_WIDTH}
+              value={selectedPlacement.x}
+              onChange={(event) =>
+                onPatchPlacement({ x: Number(event.target.value) })
+              }
+              className={FIELD_CLASS}
+            />
+          </label>
+          <label className="w-20">
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              Y
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={FARM_CANVAS_HEIGHT}
+              value={selectedPlacement.y}
+              onChange={(event) =>
+                onPatchPlacement({ y: Number(event.target.value) })
+              }
+              className={FIELD_CLASS}
+            />
+          </label>
+          <label className="w-20">
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              Rotation
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={359}
+              value={selectedPlacement.rotation}
+              onChange={(event) =>
+                onPatchPlacement({ rotation: Number(event.target.value) })
+              }
+              className={FIELD_CLASS}
+            />
+          </label>
+          <button type="button" onClick={onRemoveDevice} className={REMOVE_CLASS}>
+            Remove device
+          </button>
+        </>
+      );
+    }
+
+    return (
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        Select a device, background item, or flow line on the canvas to edit it.
+      </p>
+    );
+  }
+
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+        <div className="min-w-[90px]">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Inspector
+          </p>
+        </div>
+        {renderInspector()}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span
             className={`rounded-full px-3 py-1 text-xs font-medium ${
@@ -218,16 +462,9 @@ export default function EditorToolbar({
       </div>
 
       <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-        Drag irrigation presets, farm devices, or scenery from the left panel
-        onto the canvas. While dragging, items snap-align to other items with
-        pink guides. Select an item to edit its position, label, or
-        rotation, or use the toolbar to rotate/delete it. With Draw flow on,
-        start and end lines at ports, or branch from an existing flow line.
-        Click empty canvas to add bends. Centers and free points cannot be
-        flow endpoints. Attached lines merge into one flow and share the
-        upstream pump state. Select a line to drag its waypoints. Copy/Paste
-        (or Ctrl/Cmd+C and Ctrl/Cmd+V) duplicates the selected palette device
-        or background item.
+        Drag irrigation presets or scenery onto the canvas. Select an item to
+        edit it in the inspector above. With Draw flow on, start and end lines
+        at ports, or branch from an existing flow line.
       </p>
 
       {error ? (

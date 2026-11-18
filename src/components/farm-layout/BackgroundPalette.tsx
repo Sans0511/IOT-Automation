@@ -22,16 +22,6 @@ const ITEM_STYLES: Record<FarmBackgroundItemType, string> = {
     "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
   ROSE_PLANT:
     "bg-pink-100 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300",
-  WATER_TANK:
-    "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
-  SPRINKLER_LINE:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  DELIVERY_POINT:
-    "bg-lime-100 text-lime-700 dark:bg-lime-950/40 dark:text-lime-300",
-  POND: "bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300",
-  SHED: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
-  FLOWER_BED:
-    "bg-pink-100 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300",
 };
 
 export default function BackgroundPalette() {
@@ -44,7 +34,7 @@ export default function BackgroundPalette() {
         Drag scenery onto the farm canvas.
       </p>
 
-      <div className="mt-4 space-y-2">
+      <div className="mt-4 flex flex-row flex-wrap gap-2">
         {FARM_BACKGROUND_ITEM_TYPES.map((type) => {
           const icon = ITEM_ICONS[type];
 
@@ -56,7 +46,7 @@ export default function BackgroundPalette() {
                 event.dataTransfer.setData(BACKGROUND_ITEM_DRAG_TYPE, type);
                 event.dataTransfer.effectAllowed = "copy";
               }}
-              className="flex cursor-grab items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition hover:border-emerald-300 hover:bg-emerald-50/50 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-950 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/20"
+              className="flex min-w-[160px] flex-1 cursor-grab items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition hover:border-emerald-300 hover:bg-emerald-50/50 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-950 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/20"
             >
               <span
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${ITEM_STYLES[type]}`}

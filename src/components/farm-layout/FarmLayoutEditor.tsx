@@ -6,14 +6,11 @@ import BackgroundPalette from "./BackgroundPalette";
 import DevicePalette from "./DevicePalette";
 import EditorToolbar from "./EditorToolbar";
 import { endpointOfConnection, sameFlowEndpoint } from "./flow-utils";
-import InspectorRouter from "./InspectorRouter";
 import {
   buildLayoutPayload,
   reloadFarmLayout,
   saveFarmLayout,
 } from "./layout-api";
-import type { BackgroundItemPatch } from "./BackgroundInspector";
-import type { PlacementPatch } from "./LayoutInspector";
 import {
   createFarmBackgroundItem,
   createFarmFlowConnection,
@@ -31,10 +28,12 @@ import {
   type FarmDevicePresetKey,
   type FarmFlowEndpointRef,
   type FarmPoint,
+  type BackgroundItemPatch,
   type FarmLayoutBackgroundItem,
   type FarmLayoutData,
   type FarmLayoutDevice,
   type FarmLayoutPlacement,
+  type PlacementPatch,
 } from "@/lib/farm-layout";
 
 type LayoutClipboard =
@@ -961,6 +960,19 @@ export default function FarmLayoutEditor({
         publishing={publishing}
         error={error}
         message={message}
+        selectedConnection={selectedConnection}
+        selectedBackgroundItem={selectedBackgroundItem}
+        selectedDevice={selectedDevice}
+        selectedPlacement={selectedPlacement}
+        backgroundItems={layout.backgroundItems}
+        devicesById={devicesById}
+        onPatchBackgroundItem={handlePatchBackgroundItem}
+        onRemoveBackgroundItem={handleRemoveBackgroundItem}
+        onPatchPlacement={handlePatchPlacement}
+        onRemoveDevice={() =>
+          selectedDeviceId ? handleRemoveDevice(selectedDeviceId) : undefined
+        }
+        onDeleteSelected={handleDeleteSelected}
         onToggleSnap={() => setSnapToGrid((current) => !current)}
         onCopy={handleCopySelection}
         onPaste={handlePasteClipboard}
@@ -986,23 +998,7 @@ export default function FarmLayoutEditor({
         }}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[220px_minmax(0,1fr)_240px]">
-        <div className="space-y-6">
-          <DevicePalette
-            devices={allDevices}
-            placements={layout.placements}
-            onSelect={handleSelectDevice}
-            onRemove={handleRemoveDevice}
-            onAddPreset={(presetKey) => {
-              const count = layout.placements.filter(
-                (placement) => placement.presetKey === presetKey,
-              ).length;
-              handleAddPreset(presetKey, 120 + count * 40, 120 + count * 40);
-            }}
-          />
-          <BackgroundPalette />
-        </div>
-
+      <div className="flex flex-col gap-6">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -1051,21 +1047,16 @@ export default function FarmLayoutEditor({
           />
         </section>
 
-        <InspectorRouter
-          selectedConnection={selectedConnection}
-          selectedBackgroundItem={selectedBackgroundItem}
-          selectedDevice={selectedDevice}
-          selectedPlacement={selectedPlacement}
-          backgroundItems={layout.backgroundItems}
-          devicesById={devicesById}
-          onPatchBackgroundItem={handlePatchBackgroundItem}
-          onRemoveBackgroundItem={handleRemoveBackgroundItem}
-          onPatchPlacement={handlePatchPlacement}
-          onRemoveDevice={() =>
-            selectedDeviceId ? handleRemoveDevice(selectedDeviceId) : undefined
-          }
-          onDeleteSelected={handleDeleteSelected}
+        <DevicePalette
+          placements={layout.placements}
+          onAddPreset={(presetKey) => {
+            const count = layout.placements.filter(
+              (placement) => placement.presetKey === presetKey,
+            ).length;
+            handleAddPreset(presetKey, 120 + count * 40, 120 + count * 40);
+          }}
         />
+        <BackgroundPalette />
       </div>
     </div>
   );

@@ -11,12 +11,6 @@ export const FARM_BACKGROUND_ITEM_TYPES = [
   "APPLE_TREE",
   "MANGO_TREE",
   "ROSE_PLANT",
-  "WATER_TANK",
-  "SPRINKLER_LINE",
-  "DELIVERY_POINT",
-  "POND",
-  "SHED",
-  "FLOWER_BED",
 ] as const;
 
 export type FarmBackgroundItemType =
@@ -108,6 +102,12 @@ export type FarmLayoutPlacement = {
   label: string | null;
   presetKey?: FarmDevicePresetKey;
 };
+
+export type PlacementPatch = Partial<Omit<FarmLayoutPlacement, "deviceId">>;
+
+export type BackgroundItemPatch = Partial<
+  Omit<FarmLayoutBackgroundItem, "id" | "type">
+>;
 
 export type FarmPoint = { x: number; y: number };
 
@@ -468,12 +468,6 @@ export const FARM_BACKGROUND_LABELS: Record<FarmBackgroundItemType, string> = {
   APPLE_TREE: "Apple tree",
   MANGO_TREE: "Mango tree",
   ROSE_PLANT: "Rose plant",
-  WATER_TANK: "Water tank",
-  SPRINKLER_LINE: "Sprinkler line",
-  DELIVERY_POINT: "Delivery point",
-  POND: "Pond",
-  SHED: "Shed",
-  FLOWER_BED: "Flower bed",
 };
 
 function clamp(value: number, max: number): number {
@@ -750,6 +744,10 @@ export function parseFarmBackgroundItems(
     }
 
     const { id, type, x, y, rotation, scale } = entry;
+    if (!isBackgroundItemType(type)) {
+      continue;
+    }
+
     const rotationValue = rotation === undefined ? 0 : rotation;
     const scaleValue = scale === undefined ? 1 : scale;
 
@@ -758,7 +756,6 @@ export function parseFarmBackgroundItems(
       !id.trim() ||
       id.length > 100 ||
       seen.has(id) ||
-      !isBackgroundItemType(type) ||
       typeof x !== "number" ||
       !Number.isFinite(x) ||
       typeof y !== "number" ||

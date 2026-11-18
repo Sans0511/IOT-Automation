@@ -1,12 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import {
   DEVICE_PRESET_DRAG_TYPE,
-  DEVICE_TYPE_LABELS,
   FARM_DEVICE_PRESETS,
   type FarmDevicePresetKey,
-  type FarmLayoutDevice,
   type FarmLayoutPlacement,
 } from "@/lib/farm-layout";
 
@@ -35,25 +32,12 @@ const PRESET_ICONS: Partial<Record<FarmDevicePresetKey, string>> = {
 };
 
 export default function DevicePalette({
-  devices,
   placements,
-  onSelect,
-  onRemove,
   onAddPreset,
 }: {
-  devices: FarmLayoutDevice[];
   placements: FarmLayoutPlacement[];
-  onSelect: (deviceId: string) => void;
-  onRemove: (deviceId: string) => void;
   onAddPreset: (presetKey: FarmDevicePresetKey) => void;
 }) {
-  const [search, setSearch] = useState("");
-  const placedIds = new Set(placements.map((placement) => placement.deviceId));
-  const presetDeviceIds = new Set(
-    placements
-      .filter((placement) => placement.presetKey)
-      .map((placement) => placement.deviceId),
-  );
   const presetCounts = placements.reduce<Record<string, number>>(
     (counts, placement) => {
       if (placement.presetKey) {
@@ -62,11 +46,6 @@ export default function DevicePalette({
       return counts;
     },
     {},
-  );
-  const visibleDevices = devices.filter(
-    (device) =>
-      !presetDeviceIds.has(device.id) &&
-      device.name.toLowerCase().includes(search.trim().toLowerCase()),
   );
 
   return (
@@ -78,18 +57,11 @@ export default function DevicePalette({
         Drag an item onto the farm canvas.
       </p>
 
-      <input
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        placeholder="Search devices"
-        className="mt-4 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-      />
-
       <div className="mt-5">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
           Irrigation presets
         </p>
-        <div className="space-y-2">
+        <div className="flex flex-row flex-wrap gap-2">
           {FARM_DEVICE_PRESETS.map((preset) => {
             const icon = PRESET_ICONS[preset.key];
 
@@ -104,7 +76,7 @@ export default function DevicePalette({
                 }}
                 onClick={() => onAddPreset(preset.key)}
                 title="Drag onto the canvas, or click to add in the center"
-                className="flex w-full cursor-grab items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-emerald-300 hover:bg-emerald-50/50 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-950 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/20"
+                className="flex min-w-[160px] flex-1 cursor-grab items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-emerald-300 hover:bg-emerald-50/50 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-950 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/20"
               >
                 <span className="flex min-w-0 items-center gap-2">
                   {icon ? (
@@ -135,71 +107,6 @@ export default function DevicePalette({
         </div>
       </div>
 
-      <div className="mt-5">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-          Farm devices
-        </p>
-        <div className="space-y-2">
-          {visibleDevices.length ? (
-            visibleDevices.map((device) => {
-              const placed = placedIds.has(device.id);
-
-              return (
-                <div
-                  key={device.id}
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData(
-                      "application/x-farm-device-id",
-                      device.id,
-                    );
-                    event.dataTransfer.effectAllowed = "copy";
-                  }}
-                  className="cursor-grab rounded-xl border border-slate-200 bg-white p-3 transition hover:border-emerald-300 hover:bg-emerald-50/50 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-950 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/20"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={() => onSelect(device.id)}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <span className="block truncate text-sm font-medium text-slate-900 dark:text-white">
-                        {device.name}
-                      </span>
-                      <span
-                        className={`mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                          PALETTE_COLORS[device.type] ??
-                          "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                        }`}
-                      >
-                        {DEVICE_TYPE_LABELS[device.type] ?? device.type}
-                      </span>
-                    </button>
-                    {placed ? (
-                      <button
-                        type="button"
-                        onClick={() => onRemove(device.id)}
-                        className="rounded-lg px-2 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40"
-                      >
-                        Remove
-                      </button>
-                    ) : null}
-                  </div>
-                  {placed ? (
-                    <p className="mt-2 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                      Placed on canvas
-                    </p>
-                  ) : null}
-                </div>
-              );
-            })
-          ) : (
-            <p className="rounded-lg bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-slate-950 dark:text-slate-400">
-              No devices match your search.
-            </p>
-          )}
-        </div>
-      </div>
     </aside>
   );
 }

@@ -78,15 +78,6 @@ const BACKGROUND_ICONS: Partial<Record<FarmBackgroundItemType, string>> = {
   ROSE_PLANT: "/background-items/rose-plant-icon.svg",
 };
 
-const BACKGROUND_FALLBACKS: Partial<Record<FarmBackgroundItemType, string>> = {
-  WATER_TANK: "TANK",
-  SPRINKLER_LINE: "PIPE",
-  DELIVERY_POINT: "OUT",
-  POND: "POND",
-  SHED: "SHED",
-  FLOWER_BED: "FLOWER",
-};
-
 const FLOW_STYLES: Record<
   FlowState,
   { glow: string; line: string; dash: string; opacity: number; animate: boolean }
@@ -1133,7 +1124,7 @@ export default function FarmLayoutViewer({
 
       {layout.backgroundItems.map((item) => {
         const icon = BACKGROUND_ICONS[item.type];
-        const fallback = BACKGROUND_FALLBACKS[item.type] ?? FARM_BACKGROUND_LABELS[item.type].slice(0, 1);
+        const fallback = FARM_BACKGROUND_LABELS[item.type].slice(0, 1);
 
         return (
           <div
