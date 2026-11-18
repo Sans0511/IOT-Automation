@@ -34,7 +34,7 @@ function orthogonalPath(points: FarmPoint[]): number[] {
   return result;
 }
 
-function buildFlowPoints(
+export function buildFlowPoints(
   from: FarmPoint,
   to: FarmPoint,
   waypoints: FarmPoint[],

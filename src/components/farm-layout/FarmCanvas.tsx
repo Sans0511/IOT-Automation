@@ -13,7 +13,7 @@ import {
   Text,
 } from "react-konva";
 import BackgroundItemNode from "./BackgroundItemNode";
-import ConnectionLine from "./ConnectionLine";
+import ConnectionLine, { buildFlowPoints } from "./ConnectionLine";
 import { useCanvasImage } from "./useCanvasImage";
 import {
   BACKGROUND_ITEM_DRAG_TYPE,
@@ -482,10 +482,19 @@ export default function FarmCanvas({
   const previewSource =
     linkMode && linkSource ? resolveFlowEndpoint(linkSource) : null;
 
-  function toContent(point: FarmPoint): FarmPoint {
+  function pointerToContent(point: FarmPoint): FarmPoint {
     return {
-      x: clamp(snap((point.x - pan.x) / stageScale, snapToGrid), width),
-      y: clamp(snap((point.y - pan.y) / stageScale, snapToGrid), height),
+      x: clamp((point.x - pan.x) / stageScale, width),
+      y: clamp((point.y - pan.y) / stageScale, height),
+    };
+  }
+
+  function toContent(point: FarmPoint): FarmPoint {
+    const content = pointerToContent(point);
+
+    return {
+      x: snap(content.x, snapToGrid),
+      y: snap(content.y, snapToGrid),
     };
   }
 
@@ -512,6 +521,17 @@ export default function FarmCanvas({
 
     onSelectBackgroundItem(nearbyPort.backgroundItemId, nearbyPort.port);
     return true;
+  }
+
+  function handleFlowLineHit(connectionId: string, pointer: FarmPoint) {
+    const point = pointerToContent(pointer);
+    setDraftPoint(point);
+
+    if (selectNearbyPort(point)) {
+      return;
+    }
+
+    onSelectFlowConnection(connectionId, point);
   }
 
   function resolveEndpoint(
@@ -1004,7 +1024,7 @@ export default function FarmCanvas({
                 onSelectAt={
                   linkMode
                     ? (pointer) =>
-                        onSelectFlowConnection(connection.id, toContent(pointer))
+                        onSelectFlowConnection(connection.id, pointerToContent(pointer))
                     : undefined
                 }
               />
@@ -1119,6 +1139,52 @@ export default function FarmCanvas({
               />
             );
           })}
+          {linkMode
+            ? connections.map((connection) => {
+                const source = resolveEndpoint(connection, "from");
+                const target = resolveEndpoint(connection, "to");
+
+                if (!source || !target) {
+                  return null;
+                }
+
+                const points = buildFlowPoints(
+                  source.point,
+                  target.point,
+                  connection.waypoints ?? [],
+                  source.offset,
+                  target.offset,
+                );
+
+                return (
+                  <Line
+                    key={`link-hit-${connection.id}`}
+                    points={points}
+                    stroke="rgba(0,0,0,0)"
+                    strokeWidth={16}
+                    hitStrokeWidth={22}
+                    lineCap="round"
+                    lineJoin="round"
+                    onMouseDown={(event) => {
+                      event.cancelBubble = true;
+                      const pointer = event.target.getStage()?.getPointerPosition();
+
+                      if (pointer) {
+                        handleFlowLineHit(connection.id, pointer);
+                      }
+                    }}
+                    onTap={(event) => {
+                      event.cancelBubble = true;
+                      const pointer = event.target.getStage()?.getPointerPosition();
+
+                      if (pointer) {
+                        handleFlowLineHit(connection.id, pointer);
+                      }
+                    }}
+                  />
+                );
+              })
+            : null}
         </Layer>
       </Stage>
     </div>
