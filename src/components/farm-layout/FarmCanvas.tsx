@@ -22,10 +22,15 @@ import {
   FARM_BACKGROUND_ITEM_TYPES,
   FARM_CANVAS_HEIGHT,
   FARM_CANVAS_WIDTH,
-  FARM_DEVICE_PORT_OFFSET,
   FARM_LAYOUT_GRID,
   findNearbyFarmDevicePort,
+  getFarmDevicePortLocalPoint,
+  getFarmDevicePortPoint,
+  getFarmDevicePortRole,
+  getFarmDevicePortSide,
+  getFarmDevicePorts,
   isFarmDevicePresetKey,
+  isFarmDevicePort,
   type FarmBackgroundItemType,
   type FarmDevicePort,
   type FarmDevicePresetKey,
@@ -104,22 +109,6 @@ function snap(value: number, enabled: boolean): number {
   return Math.round(value / FARM_LAYOUT_GRID) * FARM_LAYOUT_GRID;
 }
 
-function getDevicePorts(type: string): FarmDevicePort[] {
-  if (type === "SOLENOID_VALVE" || type === "VALVE") {
-    return ["inlet", "outlet"];
-  }
-
-  if (
-    type === "PUMP" ||
-    type === "MOTOR_PUMP" ||
-    type === "SMART_IRRIGATION_CONTROLLER"
-  ) {
-    return ["outlet"];
-  }
-
-  return [];
-}
-
 function endpointFor(
   placement: FarmLayoutPlacement,
   port?: FarmDevicePort,
@@ -128,14 +117,23 @@ function endpointFor(
     return { x: placement.x, y: placement.y, usesPort: false };
   }
 
-  const radians = (placement.rotation * Math.PI) / 180;
-  const distance = port === "inlet" ? -FARM_DEVICE_PORT_OFFSET : FARM_DEVICE_PORT_OFFSET;
+  const point = getFarmDevicePortPoint(placement, port);
 
-  return {
-    x: placement.x + distance * Math.cos(radians),
-    y: placement.y + distance * Math.sin(radians),
-    usesPort: true,
-  };
+  return { x: point.x, y: point.y, usesPort: true };
+}
+
+function portLabelOffset(port: FarmDevicePort): { x: number; y: number } {
+  const side = getFarmDevicePortSide(port);
+
+  if (!side) {
+    return { x: -20, y: 11 };
+  }
+
+  if (side === "top" || side === "bottom") {
+    return { x: -10, y: side === "top" ? -18 : 8 };
+  }
+
+  return { x: side === "right" ? 8 : -29, y: -5 };
 }
 
 function DeviceNode({
@@ -301,22 +299,20 @@ function DeviceNode({
           <Line points={[-7, -1, 7, -1]} stroke={color} strokeWidth={4} />
         </>
       ) : null}
-       {getDevicePorts(device.type).map((port) => {
-         const x =
-           port === "inlet"
-             ? -FARM_DEVICE_PORT_OFFSET
-             : FARM_DEVICE_PORT_OFFSET;
-         const active = highlighted && linkSourcePort === port;
+        {getFarmDevicePorts(device.type).map((port) => {
+          const local = getFarmDevicePortLocalPoint(port);
+          const label = portLabelOffset(port);
+          const active = highlighted && linkSourcePort === port;
 
-         return (
-           <Group key={port} x={x}>
+          return (
+            <Group key={port} x={local.x} y={local.y}>
               <Circle
                 name="flow-port"
                 id={`${device.id}:${port}`}
-                radius={active ? 9 : 6}
+                radius={active ? 8 : 5}
                 fill="#ffffff"
                 stroke={active ? "#2563eb" : color}
-                strokeWidth={3}
+                strokeWidth={2}
                 onMouseDown={(event) => {
                   event.cancelBubble = true;
                   onPortDragStart(device.id, port);
@@ -328,20 +324,21 @@ function DeviceNode({
                   onSelect(device.id, port);
                 }}
               />
-             <Text
-               x={-20}
-               y={11}
-               width={40}
-               text={port === "inlet" ? "IN" : "OUT"}
-               fontSize={9}
-               fontStyle="bold"
-               align="center"
-               fill={active ? "#1d4ed8" : "#475569"}
-               listening={false}
-             />
-           </Group>
-         );
-       })}
+              <Text
+                x={label.x}
+                y={label.y}
+                width={getFarmDevicePortRole(port) === "inlet" ? 20 : 26}
+                text={getFarmDevicePortRole(port) === "inlet" ? "IN" : "OUT"}
+                fontSize={8}
+                fontStyle="bold"
+                align="center"
+                fill={active ? "#1d4ed8" : "#475569"}
+                listening={false}
+              />
+            </Group>
+          );
+        })}
+
         <Rect
           x={-72}
           y={-59}
@@ -696,8 +693,11 @@ export default function FarmCanvas({
 
     selectNearbyPortOr(point, () => {
       if (port) {
-        const [deviceId, portName] = (port.id() ?? "").split(":");
-        if (deviceId && (portName === "inlet" || portName === "outlet")) {
+        const portId = port.id() ?? "";
+        const separatorIndex = portId.indexOf(":");
+        const deviceId = separatorIndex === -1 ? "" : portId.slice(0, separatorIndex);
+        const portName = separatorIndex === -1 ? "" : portId.slice(separatorIndex + 1);
+        if (deviceId && isFarmDevicePort(portName)) {
           onSelect(deviceId, portName);
           return;
         }

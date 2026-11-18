@@ -11,8 +11,11 @@ import {
 import {
   DEVICE_TYPE_LABELS,
   FARM_BACKGROUND_LABELS,
-  FARM_DEVICE_PORT_OFFSET,
+  getFarmDevicePortPoint,
+  getFarmDevicePortRole,
+  getFarmDevicePorts,
   type FarmBackgroundItemType,
+  type FarmDevicePort,
   type FarmLayoutConnection,
   type FarmLayoutData,
   type FarmLayoutDevice,
@@ -106,22 +109,6 @@ const STATUS_STYLES: Record<DeviceRuntimeState, string> = {
   "NO DATA": "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
 };
 
-function getDevicePorts(type: string): ("inlet" | "outlet")[] {
-  if (type === "SOLENOID_VALVE" || type === "VALVE") {
-    return ["inlet", "outlet"];
-  }
-
-  if (
-    type === "PUMP" ||
-    type === "MOTOR_PUMP" ||
-    type === "SMART_IRRIGATION_CONTROLLER"
-  ) {
-    return ["outlet"];
-  }
-
-  return [];
-}
-
 function direction(from: FarmPoint, to: FarmPoint): FarmPoint {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -207,22 +194,13 @@ function toPolyline(points: number[]): string {
 
 function endpointFor(
   placement: FarmLayoutPlacement,
-  port?: "inlet" | "outlet",
+  port?: FarmDevicePort,
 ): ResolvedEndpoint {
   if (!port) {
     return { point: { x: placement.x, y: placement.y }, offset: 32 };
   }
 
-  const radians = (placement.rotation * Math.PI) / 180;
-  const distance = port === "inlet" ? -FARM_DEVICE_PORT_OFFSET : FARM_DEVICE_PORT_OFFSET;
-
-  return {
-    point: {
-      x: placement.x + distance * Math.cos(radians),
-      y: placement.y + distance * Math.sin(radians),
-    },
-    offset: 0,
-  };
+  return { point: getFarmDevicePortPoint(placement, port), offset: 0 };
 }
 
 function snapFreeEndpoint(
@@ -719,7 +697,7 @@ export default function FarmLayoutViewer({
         const device = devicesById.get(placement.deviceId);
         const type = device?.type ?? placement.presetKey ?? "DEVICE";
 
-        return getDevicePorts(type).map((port) => {
+        return getFarmDevicePorts(type).map((port) => {
           const endpoint = endpointFor(placement, port);
 
           return (
@@ -738,7 +716,7 @@ export default function FarmLayoutViewer({
                 }}
               />
               <span className="absolute left-1/2 top-3 -translate-x-1/2 text-[8px] font-bold uppercase text-slate-600">
-                {port === "inlet" ? "IN" : "OUT"}
+                {getFarmDevicePortRole(port) === "inlet" ? "IN" : "OUT"}
               </span>
             </div>
           );

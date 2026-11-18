@@ -41,11 +41,30 @@ export const FARM_DEVICE_PRESET_LABELS = {
 
 export type FarmDevicePresetKey = keyof typeof FARM_DEVICE_PRESET_LABELS;
 
-export type FarmDevicePort = "inlet" | "outlet";
+export const FARM_DEVICE_PORT_SIDES = [
+  "top",
+  "right",
+  "bottom",
+  "left",
+] as const;
+
+export type FarmDevicePortSide = (typeof FARM_DEVICE_PORT_SIDES)[number];
+export type FarmDevicePortRole = "inlet" | "outlet";
+export type FarmDevicePort =
+  | "inlet"
+  | "outlet"
+  | "inlet-top"
+  | "inlet-left"
+  | "outlet-right"
+  | "outlet-bottom";
 
 export const FARM_DEVICE_PORT_LABELS: Record<FarmDevicePort, string> = {
   inlet: "Incoming",
   outlet: "Delivery",
+  "inlet-top": "Incoming (top)",
+  "inlet-left": "Incoming (left)",
+  "outlet-right": "Delivery (right)",
+  "outlet-bottom": "Delivery (bottom)",
 };
 
 export const FARM_DEVICE_PRESETS = (
@@ -105,9 +124,54 @@ export type FarmLayoutDevice = {
 
 export const FARM_FLOW_PORT_SNAP_DISTANCE = 28;
 
+const FARM_DEVICE_PORT_SIDE_VECTORS: Record<FarmDevicePortSide, FarmPoint> = {
+  top: { x: 0, y: -1 },
+  right: { x: 1, y: 0 },
+  bottom: { x: 0, y: 1 },
+  left: { x: -1, y: 0 },
+};
+
+const FARM_DEVICE_PORT_SIDE_ROLES: Record<
+  FarmDevicePortSide,
+  FarmDevicePortRole
+> = {
+  top: "inlet",
+  right: "outlet",
+  bottom: "outlet",
+  left: "inlet",
+};
+
+const FARM_DEVICE_INLET_PORTS: FarmDevicePort[] = ["inlet-top", "inlet-left"];
+const FARM_DEVICE_OUTLET_PORTS: FarmDevicePort[] = [
+  "outlet-right",
+  "outlet-bottom",
+];
+
+export function parseFarmDevicePort(port: FarmDevicePort): {
+  role: FarmDevicePortRole;
+  side: FarmDevicePortSide | null;
+} {
+  const [role, side] = port.split("-");
+
+  return {
+    role: role as FarmDevicePortRole,
+    side: (side as FarmDevicePortSide | undefined) ?? null,
+  };
+}
+
+export function getFarmDevicePortRole(port: FarmDevicePort): FarmDevicePortRole {
+  return parseFarmDevicePort(port).role;
+}
+
+export function getFarmDevicePortSide(
+  port: FarmDevicePort,
+): FarmDevicePortSide | null {
+  return parseFarmDevicePort(port).side;
+}
+
 export function getFarmDevicePorts(type: string): FarmDevicePort[] {
   if (type === "SOLENOID_VALVE" || type === "VALVE") {
-    return ["inlet", "outlet"];
+    return [...FARM_DEVICE_INLET_PORTS, ...FARM_DEVICE_OUTLET_PORTS];
   }
 
   if (
@@ -115,23 +179,74 @@ export function getFarmDevicePorts(type: string): FarmDevicePort[] {
     type === "MOTOR_PUMP" ||
     type === "SMART_IRRIGATION_CONTROLLER"
   ) {
-    return ["outlet"];
+    return FARM_DEVICE_OUTLET_PORTS;
   }
 
   return [];
+}
+
+export function getFarmDevicePortLocalPoint(port: FarmDevicePort): FarmPoint {
+  const { role, side } = parseFarmDevicePort(port);
+
+  if (!side) {
+    return {
+      x: role === "inlet" ? -FARM_DEVICE_PORT_OFFSET : FARM_DEVICE_PORT_OFFSET,
+      y: 0,
+    };
+  }
+
+  const vector = FARM_DEVICE_PORT_SIDE_VECTORS[side];
+
+  return {
+    x: vector.x * FARM_DEVICE_PORT_OFFSET,
+    y: vector.y * FARM_DEVICE_PORT_OFFSET,
+  };
+}
+
+function deriveFarmDevicePortSide(
+  role: FarmDevicePortRole,
+  rotation: number,
+): FarmDevicePortSide {
+  const candidates = FARM_DEVICE_PORT_SIDES.filter(
+    (side) => FARM_DEVICE_PORT_SIDE_ROLES[side] === role,
+  );
+  const radians = (rotation * Math.PI) / 180;
+  const direction =
+    role === "inlet"
+      ? { x: -Math.cos(radians), y: -Math.sin(radians) }
+      : { x: Math.cos(radians), y: Math.sin(radians) };
+  let best = candidates[0];
+  let bestScore = -Infinity;
+
+  for (const side of candidates) {
+    const vector = FARM_DEVICE_PORT_SIDE_VECTORS[side];
+    const score = direction.x * vector.x + direction.y * vector.y;
+
+    if (score > bestScore) {
+      best = side;
+      bestScore = score;
+    }
+  }
+
+  return best;
 }
 
 export function getFarmDevicePortPoint(
   placement: FarmLayoutPlacement,
   port: FarmDevicePort,
 ): FarmPoint {
+  const { role, side } = parseFarmDevicePort(port);
+  const resolvedPort: FarmDevicePort = side
+    ? port
+    : (`${role}-${deriveFarmDevicePortSide(role, placement.rotation)}` as FarmDevicePort);
+  const local = getFarmDevicePortLocalPoint(resolvedPort);
   const radians = (placement.rotation * Math.PI) / 180;
-  const distance =
-    port === "inlet" ? -FARM_DEVICE_PORT_OFFSET : FARM_DEVICE_PORT_OFFSET;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
 
   return {
-    x: placement.x + distance * Math.cos(radians),
-    y: placement.y + distance * Math.sin(radians),
+    x: placement.x + local.x * cos - local.y * sin,
+    y: placement.y + local.x * sin + local.y * cos,
   };
 }
 
@@ -321,8 +436,24 @@ export function createFarmBackgroundConnection(
   );
 }
 
-function isFarmDevicePort(value: unknown): value is FarmDevicePort {
-  return value === "inlet" || value === "outlet";
+export function isFarmDevicePort(value: unknown): value is FarmDevicePort {
+  if (value === "inlet" || value === "outlet") {
+    return true;
+  }
+
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const [role, side, ...rest] = value.split("-");
+  const parsedSide = side as FarmDevicePortSide;
+
+  return (
+    rest.length === 0 &&
+    (role === "inlet" || role === "outlet") &&
+    FARM_DEVICE_PORT_SIDES.includes(parsedSide) &&
+    FARM_DEVICE_PORT_SIDE_ROLES[parsedSide] === role
+  );
 }
 
 export function isFarmDevicePresetKey(
