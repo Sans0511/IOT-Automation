@@ -40,6 +40,18 @@ export function getMqttBrokerUrl(): string {
     );
   }
 
+  if (process.env.NODE_ENV === "production") {
+    if (parsed.protocol !== "mqtts:" && parsed.protocol !== "wss:") {
+      throw new Error(
+        "MQTT_BROKER_URL must use mqtts or wss protocol in production",
+      );
+    }
+
+    if (!parsed.username || !parsed.password) {
+      throw new Error("MQTT_BROKER_URL must include credentials in production");
+    }
+  }
+
   return url;
 }
 

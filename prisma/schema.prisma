@@ -30,6 +30,8 @@ model Farm {
   layout    FarmLayout?
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
+
+  @@index([ownerId])
 }
 
 model Device {
@@ -42,6 +44,9 @@ model Device {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([farmId])
+  @@index([farmId, type])
 }
 
 model FarmLayout {

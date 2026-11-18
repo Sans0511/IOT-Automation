@@ -1,20 +1,36 @@
 @import "tailwindcss";
 
+:root {
+  --rain-top-offset: -4rem;
+  --rain-width: 1.5px;
+  --rain-color: oklch(0.705 0.154 257.33 / 0.95);
+  --rain-glow: 0 0 8px rgb(59 130 246 / 0.95);
+  --rain-start-offset: -10vh;
+  --rain-end-offset: 110vh;
+  --rain-drift: -48px;
+  --rain-angle: 14deg;
+  --rain-default-opacity: 0.75;
+}
+
 @keyframes rain-fall {
   0% {
-    transform: translate3d(0, -10vh, 0) rotate(14deg);
+    transform: translate3d(0, var(--rain-start-offset), 0) rotate(var(--rain-angle));
     opacity: 0;
   }
   15% {
-    opacity: var(--rain-opacity, 0.75);
+    opacity: var(--rain-opacity, var(--rain-default-opacity));
   }
   100% {
-    transform: translate3d(-48px, 110vh, 0) rotate(14deg);
+    transform: translate3d(var(--rain-drift), var(--rain-end-offset), 0) rotate(var(--rain-angle));
     opacity: 0;
   }
 }
 
 .rain-drop {
+  top: var(--rain-top-offset);
+  width: var(--rain-width);
+  background-color: var(--rain-color);
+  box-shadow: var(--rain-glow);
   animation-name: rain-fall;
   animation-timing-function: linear;
   animation-iteration-count: infinite;

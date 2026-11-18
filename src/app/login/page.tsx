@@ -4,8 +4,6 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 type LoginResponse = {
-  accessToken: string;
-  refreshToken: string;
   user: {
     id: string;
     name: string | null;
@@ -45,7 +43,7 @@ export default function LoginPage() {
         return;
       }
 
-      if (!("accessToken" in data)) {
+      if (!("user" in data)) {
         setError("Unexpected response from the server");
         return;
       }

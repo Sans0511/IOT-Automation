@@ -1,37 +1,16 @@
+import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
-import jwt, { type JwtPayload, type SignOptions } from "jsonwebtoken";
 import { NextResponse, type NextRequest } from "next/server";
-import type { Role } from "@prisma/client";
+import {
+  ACCESS_TOKEN_MAX_AGE_SECONDS,
+  REFRESH_TOKEN_TTL_SECONDS,
+  signAccessToken,
+  signRefreshToken,
+} from "@/lib/jwt";
 import { prisma } from "@/lib/prisma";
-import { storeRefreshToken } from "@/lib/redis";
+import { hashRefreshToken, storeRefreshSession } from "@/lib/redis";
 
-const ACCESS_TOKEN_TTL = "15m" as const;
-const ACCESS_TOKEN_MAX_AGE = 15 * 60;
-const REFRESH_TOKEN_TTL = "7d" as const;
-const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-interface AccessTokenPayload extends JwtPayload {
-  sub: string;
-  email: string;
-  role: Role;
-  type: "access";
-}
-
-interface RefreshTokenPayload extends JwtPayload {
-  sub: string;
-  type: "refresh";
-}
-
-function getSecret(name: "JWT_ACCESS_SECRET" | "JWT_REFRESH_SECRET"): string {
-  const secret = process.env[name];
-
-  if (!secret) {
-    throw new Error(`${name} is not configured`);
-  }
-
-  return secret;
-}
 
 function isLoginInput(
   value: unknown,
@@ -67,8 +46,6 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const accessSecret = getSecret("JWT_ACCESS_SECRET");
-    const refreshSecret = getSecret("JWT_REFRESH_SECRET");
     const email = body.email.trim().toLowerCase();
 
     const user = await prisma.user.findUnique({ where: { email } });
@@ -80,28 +57,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const accessToken = jwt.sign(
-      {
-        sub: user.id,
-        email: user.email,
-        role: user.role,
-        type: "access",
-      } satisfies AccessTokenPayload,
-      accessSecret,
-      { expiresIn: ACCESS_TOKEN_TTL } satisfies SignOptions,
-    );
+    const familyId = randomUUID();
+    const accessToken = signAccessToken({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    });
+    const refreshToken = signRefreshToken({ sub: user.id, familyId });
 
-    const refreshToken = jwt.sign(
-      { sub: user.id, type: "refresh" } satisfies RefreshTokenPayload,
-      refreshSecret,
-      { expiresIn: REFRESH_TOKEN_TTL } satisfies SignOptions,
-    );
-
-    await storeRefreshToken(user.id, refreshToken, REFRESH_TOKEN_TTL_SECONDS);
+    await storeRefreshSession(user.id, {
+      tokenHash: hashRefreshToken(refreshToken),
+      familyId,
+      expiresAtSeconds:
+        Math.floor(Date.now() / 1000) + REFRESH_TOKEN_TTL_SECONDS,
+    });
 
     const response = NextResponse.json({
-      accessToken,
-      refreshToken,
       user: {
         id: user.id,
         name: user.name,
@@ -115,7 +86,7 @@ export async function POST(request: NextRequest) {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: ACCESS_TOKEN_MAX_AGE,
+      maxAge: ACCESS_TOKEN_MAX_AGE_SECONDS,
     });
 
     response.cookies.set("refresh_token", refreshToken, {

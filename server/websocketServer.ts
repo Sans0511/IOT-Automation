@@ -62,14 +62,22 @@ function getAllowedOrigins(): string[] {
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-  return configured?.length ? configured : DEFAULT_ALLOWED_ORIGINS;
+  if (configured?.length) {
+    return configured;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("WEBSOCKET_ALLOWED_ORIGINS is required in production");
+  }
+
+  return DEFAULT_ALLOWED_ORIGINS;
 }
 
 function isAllowedOrigin(request: IncomingMessage): boolean {
   const origin = request.headers.origin;
 
   if (!origin) {
-    return true;
+    return process.env.NODE_ENV !== "production";
   }
 
   return getAllowedOrigins().includes(origin);

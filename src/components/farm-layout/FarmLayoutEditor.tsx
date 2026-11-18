@@ -2,14 +2,18 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import BackgroundInspector, {
-  type BackgroundItemPatch,
-} from "./BackgroundInspector";
 import BackgroundPalette from "./BackgroundPalette";
 import DevicePalette from "./DevicePalette";
-import LayoutInspector, {
-  type PlacementPatch,
-} from "./LayoutInspector";
+import EditorToolbar from "./EditorToolbar";
+import { endpointOfConnection, sameFlowEndpoint } from "./flow-utils";
+import InspectorRouter from "./InspectorRouter";
+import {
+  buildLayoutPayload,
+  reloadFarmLayout,
+  saveFarmLayout,
+} from "./layout-api";
+import type { BackgroundItemPatch } from "./BackgroundInspector";
+import type { PlacementPatch } from "./LayoutInspector";
 import {
   createFarmBackgroundItem,
   createFarmFlowConnection,
@@ -20,8 +24,6 @@ import {
   FARM_CANVAS_HEIGHT,
   FARM_CANVAS_WIDTH,
   FARM_BACKGROUND_LABELS,
-  FARM_BACKGROUND_PORT_LABELS,
-  FARM_DEVICE_PORT_LABELS,
   findNearbyFarmFlowPort,
   type FarmBackgroundItemType,
   type FarmBackgroundPortSide,
@@ -30,7 +32,6 @@ import {
   type FarmFlowEndpointRef,
   type FarmPoint,
   type FarmLayoutBackgroundItem,
-  type FarmLayoutConnection,
   type FarmLayoutData,
   type FarmLayoutDevice,
   type FarmLayoutPlacement,
@@ -43,28 +44,6 @@ type LayoutClipboard =
       device: FarmLayoutDevice;
     }
   | { kind: "background"; item: FarmLayoutBackgroundItem };
-
-async function fetchWithSessionRetry(
-  url: string,
-  init: RequestInit,
-): Promise<Response> {
-  const response = await fetch(url, { ...init, credentials: "same-origin" });
-
-  if (response.status !== 401) {
-    return response;
-  }
-
-  const refreshResponse = await fetch("/api/auth/refresh", {
-    method: "POST",
-    credentials: "same-origin",
-  });
-
-  if (!refreshResponse.ok) {
-    return response;
-  }
-
-  return fetch(url, { ...init, credentials: "same-origin" });
-}
 
 const FarmCanvas = dynamic(() => import("./FarmCanvas"), {
   ssr: false,
@@ -155,167 +134,6 @@ export default function FarmLayoutEditor({
   const selectedConnection =
     layout.connections.find((connection) => connection.id === selectedConnectionId) ??
     null;
-
-  function sameFlowEndpoint(
-    left: FarmFlowEndpointRef,
-    right: FarmFlowEndpointRef,
-  ): boolean {
-    if (left.kind !== right.kind) {
-      return false;
-    }
-
-    if (left.kind === "device" && right.kind === "device") {
-      return left.deviceId === right.deviceId && left.port === right.port;
-    }
-
-    if (left.kind === "backgroundItem" && right.kind === "backgroundItem") {
-      return (
-        left.backgroundItemId === right.backgroundItemId &&
-        left.port === right.port
-      );
-    }
-
-    if (left.kind === "connection" && right.kind === "connection") {
-      return (
-        left.connectionId === right.connectionId &&
-        left.point.x === right.point.x &&
-        left.point.y === right.point.y
-      );
-    }
-
-    if (left.kind === "point" && right.kind === "point") {
-      return left.point.x === right.point.x && left.point.y === right.point.y;
-    }
-
-    return false;
-  }
-
-  function connectionLabel(
-    connection: FarmLayoutConnection,
-    side: "from" | "to",
-  ): string {
-    const id =
-      side === "from" ? connection.fromDeviceId : connection.toDeviceId;
-    const backgroundId =
-      side === "from"
-        ? connection.fromBackgroundItemId
-        : connection.toBackgroundItemId;
-    const connectionId =
-      side === "from"
-        ? connection.fromConnectionId
-        : connection.toConnectionId;
-    const point =
-      side === "from" ? connection.fromPoint : connection.toPoint;
-
-    if (id) {
-      return devicesById.get(id)?.name ?? "Unknown device";
-    }
-
-    if (backgroundId) {
-      const item = layout.backgroundItems.find(
-        (backgroundItem) => backgroundItem.id === backgroundId,
-      );
-      return item ? FARM_BACKGROUND_LABELS[item.type] : "Removed item";
-    }
-
-    if (connectionId) {
-      return "Another flow line";
-    }
-
-    return point ? `Point (${point.x}, ${point.y})` : "Free end";
-  }
-
-  function endpointOfConnection(
-    connection: FarmLayoutConnection,
-    side: "from" | "to",
-  ): FarmFlowEndpointRef | null {
-    if (side === "from") {
-      if (connection.fromDeviceId) {
-        return {
-          kind: "device",
-          deviceId: connection.fromDeviceId,
-          ...(connection.fromPort ? { port: connection.fromPort } : {}),
-        };
-      }
-      if (connection.fromBackgroundItemId) {
-        return {
-          kind: "backgroundItem",
-          backgroundItemId: connection.fromBackgroundItemId,
-          ...(connection.fromBackgroundPort
-            ? { port: connection.fromBackgroundPort }
-            : {}),
-        };
-      }
-      if (connection.fromConnectionId && connection.fromPoint) {
-        return {
-          kind: "connection",
-          connectionId: connection.fromConnectionId,
-          point: connection.fromPoint,
-        };
-      }
-      return connection.fromPoint
-        ? { kind: "point", point: connection.fromPoint }
-        : null;
-    }
-
-    if (connection.toDeviceId) {
-      return {
-        kind: "device",
-        deviceId: connection.toDeviceId,
-        ...(connection.toPort ? { port: connection.toPort } : {}),
-      };
-    }
-    if (connection.toBackgroundItemId) {
-      return {
-        kind: "backgroundItem",
-        backgroundItemId: connection.toBackgroundItemId,
-        ...(connection.toBackgroundPort
-          ? { port: connection.toBackgroundPort }
-          : {}),
-      };
-    }
-    if (connection.toConnectionId && connection.toPoint) {
-      return {
-        kind: "connection",
-        connectionId: connection.toConnectionId,
-        point: connection.toPoint,
-      };
-    }
-    return connection.toPoint
-      ? { kind: "point", point: connection.toPoint }
-      : null;
-  }
-
-  function endpointPortLabel(
-    connection: FarmLayoutConnection,
-    side: "from" | "to",
-  ): string {
-    const devicePort = side === "from" ? connection.fromPort : connection.toPort;
-    const backgroundPort =
-      side === "from"
-        ? connection.fromBackgroundPort
-        : connection.toBackgroundPort;
-    const connectionId =
-      side === "from"
-        ? connection.fromConnectionId
-        : connection.toConnectionId;
-    const point = side === "from" ? connection.fromPoint : connection.toPoint;
-
-    if (devicePort) {
-      return FARM_DEVICE_PORT_LABELS[devicePort];
-    }
-    if (backgroundPort) {
-      return FARM_BACKGROUND_PORT_LABELS[backgroundPort];
-    }
-    if (connectionId) {
-      return "On flow line";
-    }
-    if (point) {
-      return "Free point";
-    }
-
-    return "Center";
-  }
 
   function handleSelectDevice(deviceId: string | null) {
     setSelectedDeviceId(deviceId);
@@ -957,53 +775,29 @@ export default function FarmLayoutEditor({
     }
   }
 
-  function buildLayoutPayload(publish = false) {
-    return {
-      version: layout.version,
-      backgroundKey: layout.backgroundKey,
-      width: layout.width,
-      height: layout.height,
-      placements: layout.placements,
-      backgroundItems: layout.backgroundItems,
-      connections: layout.connections,
-      ...(publish ? { publish: true } : {}),
-    };
-  }
-
   async function handleSave() {
-    console.log("[FarmLayoutEditor] Saving layout", {
-      farmId,
-      placements: layout.placements,
-      connections: layout.connections,
-    });
     setSaving(true);
     setError(null);
     setMessage(null);
 
     try {
-      const response = await fetchWithSessionRetry(
-        `/api/admin/farms/${farmId}/layout`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildLayoutPayload()),
-        },
-      );
-      const data = (await response.json()) as {
-        layout?: FarmLayoutData;
-        error?: string;
-      };
+      const result = await saveFarmLayout(farmId, buildLayoutPayload(layout));
 
-      if (!response.ok || !data.layout) {
+      if (result.networkError) {
+        setError("Network error while saving layout");
+        return;
+      }
+
+      if (!result.ok || !result.layout) {
         setError(
-          response.status === 401
+          result.status === 401
             ? "Your session expired. Please sign in again."
-            : (data.error ?? "Unable to save layout"),
+            : (result.error ?? "Unable to save layout"),
         );
         return;
       }
 
-      setLayout(data.layout);
+      setLayout(result.layout);
       setIsDirty(false);
       setMessage("Layout saved successfully.");
     } catch {
@@ -1030,35 +824,31 @@ export default function FarmLayoutEditor({
     setMessage(null);
 
     try {
-      const response = await fetchWithSessionRetry(
-        `/api/admin/farms/${farmId}/layout`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildLayoutPayload(true)),
-        },
+      const result = await saveFarmLayout(
+        farmId,
+        buildLayoutPayload(layout, true),
       );
-      const data = (await response.json()) as {
-        layout?: FarmLayoutData;
-        publishedDevices?: FarmLayoutDevice[];
-        error?: string;
-      };
 
-      if (!response.ok || !data.layout) {
+      if (result.networkError) {
+        setError("Network error while publishing layout");
+        return;
+      }
+
+      if (!result.ok || !result.layout) {
         setError(
-          response.status === 401
+          result.status === 401
             ? "Your session expired. Please sign in again."
-            : (data.error ?? "Unable to publish layout"),
+            : (result.error ?? "Unable to publish layout"),
         );
         return;
       }
 
-      const newDevices = data.publishedDevices ?? [];
+      const newDevices = result.publishedDevices;
       const realDevices = [...devices, ...publishedDevices, ...newDevices];
 
       setPublishedDevices(realDevices.filter((device) => !devices.some((existing) => existing.id === device.id)));
-      setPresetDevices(derivePresetDevices(data.layout.placements, realDevices));
-      setLayout(data.layout);
+      setPresetDevices(derivePresetDevices(result.layout.placements, realDevices));
+      setLayout(result.layout);
       handleSelectDevice(null);
       setIsDirty(false);
       setMessage(
@@ -1082,23 +872,21 @@ export default function FarmLayoutEditor({
     setMessage(null);
 
     try {
-      const response = await fetchWithSessionRetry(
-        `/api/admin/farms/${farmId}/layout`,
-        {},
-      );
-      const data = (await response.json()) as {
-        layout?: FarmLayoutData;
-        error?: string;
-      };
+      const result = await reloadFarmLayout(farmId);
 
-      if (!response.ok || !data.layout) {
-        setError(data.error ?? "Unable to reload layout");
+      if (result.networkError) {
+        setError("Network error while reloading layout");
         return;
       }
 
-      setLayout(data.layout);
+      if (!result.ok || !result.layout) {
+        setError(result.error ?? "Unable to reload layout");
+        return;
+      }
+
+      setLayout(result.layout);
       setPresetDevices(
-        derivePresetDevices(data.layout.placements, [
+        derivePresetDevices(result.layout.placements, [
           ...devices,
           ...publishedDevices,
         ]),
@@ -1143,203 +931,60 @@ export default function FarmLayoutEditor({
     setError(null);
   }
 
+  function toggleLinkMode() {
+    setLinkMode((current) => !current);
+    setLinkSource(null);
+    setDraftWaypoints([]);
+    setSelectedConnectionId(null);
+  }
+
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-medium ${
-                isDirty
-                  ? "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
-                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-              }`}
-            >
-              {isDirty ? "Unsaved changes" : "Saved"}
-            </span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              {layout.placements.length} device
-              {layout.placements.length === 1 ? "" : "s"} ·{" "}
-              {layout.backgroundItems.length} background item
-              {layout.backgroundItems.length === 1 ? "" : "s"} ·{" "}
-              {layout.connections.length} link
-              {layout.connections.length === 1 ? "" : "s"}
-            </span>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setSnapToGrid((current) => !current)}
-              className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                snapToGrid
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
-                  : "border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-300"
-              }`}
-            >
-              Snap: {snapToGrid ? "On" : "Off"}
-            </button>
-            <button
-              type="button"
-              onClick={handleCopySelection}
-              disabled={
-                !(
-                  (selectedDeviceId && selectedPlacement?.presetKey) ||
-                  selectedBackgroundItem
-                )
-              }
-              title="Copy selected device or background item (Ctrl/Cmd+C)"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Copy
-            </button>
-            <button
-              type="button"
-              onClick={handlePasteClipboard}
-              disabled={!clipboard}
-              title="Paste copied item (Ctrl/Cmd+V)"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Paste
-            </button>
-            <button
-              type="button"
-                onClick={() => {
-                  setLinkMode((current) => !current);
-                  setLinkSource(null);
-                  setDraftWaypoints([]);
-                  setSelectedConnectionId(null);
-                }}
-                className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                  linkMode
-                    ? "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-950/40 dark:text-sky-300"
-                    : "border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-300"
-                }`}
-              >
-                {linkMode ? "Drawing flow" : "Draw flow"}
-              </button>
-              {linkMode && linkSource ? (
-                <button
-                  type="button"
-                  onClick={cancelFlow}
-                  className="rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
-                >
-                  Cancel flow
-                </button>
-              ) : null}
-            <button
-              type="button"
-              onClick={() => setZoom((current) => Math.min(2.5, current + 0.1))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Zoom in
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoom((current) => Math.max(0.5, current - 0.1))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Zoom out
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setZoom(1);
-                setPanResetKey((current) => current + 1);
-              }}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Fit
-            </button>
-            <button
-              type="button"
-              onClick={() => handleRotateSelected(-15)}
-              disabled={!selectedDeviceId && !selectedBackgroundItemId}
-              title="Rotate selected item 15 degrees counter-clockwise"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Rotate -15°
-            </button>
-            <button
-              type="button"
-              onClick={() => handleRotateSelected(15)}
-              disabled={!selectedDeviceId && !selectedBackgroundItemId}
-              title="Rotate selected item 15 degrees clockwise"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Rotate +15°
-            </button>
-            <button
-              type="button"
-              onClick={handleDeleteSelected}
-              disabled={
-                !selectedDeviceId &&
-                !selectedBackgroundItemId &&
-                !selectedConnectionId
-              }
-              title="Delete selected item"
-              className="rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
-            >
-              Delete selected
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleReload()}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Reload
-            </button>
-            <button
-              type="button"
-              onClick={handleClear}
-              className="rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
-            >
-              Reset
-            </button>
-            <button
-              type="button"
-              onClick={() => void handlePublish()}
-              disabled={saving || publishing}
-              className="rounded-lg border border-emerald-300 px-4 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
-            >
-              {publishing ? "Publishing..." : "Publish"}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={saving || !isDirty}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save layout"}
-            </button>
-          </div>
-        </div>
-
-        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-          Drag irrigation presets, farm devices, or scenery from the left panel
-          onto the canvas. While dragging, items snap-align to other items with
-          pink guides. Select an item to edit its position, label, or
-          rotation, or use the toolbar to rotate/delete it. With Draw flow on,
-          start and end lines at ports, or branch from an existing flow line.
-          Click empty canvas to add bends. Centers and free points cannot be
-          flow endpoints. Attached lines merge into one flow and share the
-          upstream pump state. Select a line to drag its waypoints. Copy/Paste
-          (or Ctrl/Cmd+C and Ctrl/Cmd+V) duplicates the selected palette device
-          or background item.
-        </p>
-
-        {error ? (
-          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
-            {error}
-          </p>
-        ) : null}
-
-        {message ? (
-          <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-            {message}
-          </p>
-        ) : null}
-      </section>
+      <EditorToolbar
+        isDirty={isDirty}
+        placementCount={layout.placements.length}
+        backgroundItemCount={layout.backgroundItems.length}
+        connectionCount={layout.connections.length}
+        snapToGrid={snapToGrid}
+        canCopy={Boolean(
+          (selectedDeviceId && selectedPlacement?.presetKey) ||
+            selectedBackgroundItem,
+        )}
+        canPaste={Boolean(clipboard)}
+        linkMode={linkMode}
+        hasLinkSource={Boolean(linkSource)}
+        canRotate={Boolean(selectedDeviceId || selectedBackgroundItemId)}
+        canDelete={Boolean(
+          selectedDeviceId || selectedBackgroundItemId || selectedConnectionId,
+        )}
+        saving={saving}
+        publishing={publishing}
+        error={error}
+        message={message}
+        onToggleSnap={() => setSnapToGrid((current) => !current)}
+        onCopy={handleCopySelection}
+        onPaste={handlePasteClipboard}
+        onToggleLinkMode={toggleLinkMode}
+        onCancelFlow={cancelFlow}
+        onZoomIn={() => setZoom((current) => Math.min(2.5, current + 0.1))}
+        onZoomOut={() => setZoom((current) => Math.max(0.5, current - 0.1))}
+        onFit={() => {
+          setZoom(1);
+          setPanResetKey((current) => current + 1);
+        }}
+        onRotate={handleRotateSelected}
+        onDelete={handleDeleteSelected}
+        onReload={() => {
+          void handleReload();
+        }}
+        onClear={handleClear}
+        onPublish={() => {
+          void handlePublish();
+        }}
+        onSave={() => {
+          void handleSave();
+        }}
+      />
 
       <div className="grid gap-6 xl:grid-cols-[220px_minmax(0,1fr)_240px]">
         <div className="space-y-6">
@@ -1406,45 +1051,21 @@ export default function FarmLayoutEditor({
           />
         </section>
 
-        {selectedConnection ? (
-          <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-              Connection
-            </h2>
-            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-              {connectionLabel(selectedConnection, "from")}
-              <span className="mx-2 text-sky-600 dark:text-sky-400">→</span>
-              {connectionLabel(selectedConnection, "to")}
-            </p>
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              {endpointPortLabel(selectedConnection, "from")}
-              <span className="mx-2">→</span>
-              {endpointPortLabel(selectedConnection, "to")}
-            </p>
-            <button
-              type="button"
-              onClick={handleDeleteSelected}
-              className="mt-5 w-full rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
-            >
-              Remove link
-            </button>
-          </aside>
-        ) : selectedBackgroundItem ? (
-          <BackgroundInspector
-            item={selectedBackgroundItem}
-            onChange={handlePatchBackgroundItem}
-            onRemove={handleRemoveBackgroundItem}
-          />
-        ) : (
-          <LayoutInspector
-            device={selectedDevice}
-            placement={selectedPlacement}
-            onChange={handlePatchPlacement}
-            onRemove={() =>
-              selectedDeviceId ? handleRemoveDevice(selectedDeviceId) : undefined
-            }
-          />
-        )}
+        <InspectorRouter
+          selectedConnection={selectedConnection}
+          selectedBackgroundItem={selectedBackgroundItem}
+          selectedDevice={selectedDevice}
+          selectedPlacement={selectedPlacement}
+          backgroundItems={layout.backgroundItems}
+          devicesById={devicesById}
+          onPatchBackgroundItem={handlePatchBackgroundItem}
+          onRemoveBackgroundItem={handleRemoveBackgroundItem}
+          onPatchPlacement={handlePatchPlacement}
+          onRemoveDevice={() =>
+            selectedDeviceId ? handleRemoveDevice(selectedDeviceId) : undefined
+          }
+          onDeleteSelected={handleDeleteSelected}
+        />
       </div>
     </div>
   );

@@ -1,27 +1,28 @@
-import jwt from "jsonwebtoken";
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  ACCESS_AUDIENCE,
+  ACCESS_TOKEN_MAX_AGE_SECONDS,
+  type AccessTokenPayload,
+  verifyToken,
+} from "@/lib/jwt";
 
 const ACCESS_TOKEN_COOKIE = "access_token";
 
 function isAuthenticated(request: NextRequest): boolean {
-  const token = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value;
-  const secret = process.env.JWT_ACCESS_SECRET;
+  const token = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value ?? "";
+  const payload = verifyToken<AccessTokenPayload>(
+    token,
+    process.env.JWT_ACCESS_SECRET,
+    ACCESS_AUDIENCE,
+    ACCESS_TOKEN_MAX_AGE_SECONDS,
+  );
 
-  if (!token || !secret) {
-    return false;
-  }
-
-  try {
-    const payload = jwt.verify(token, secret);
-
-    return (
-      typeof payload === "object" &&
-      payload.type === "access" &&
-      typeof payload.sub === "string"
-    );
-  } catch {
-    return false;
-  }
+  return (
+    payload?.type === "access" &&
+    typeof payload.sub === "string" &&
+    typeof payload.email === "string" &&
+    (payload.role === "ADMIN" || payload.role === "USER")
+  );
 }
 
 export function proxy(request: NextRequest) {

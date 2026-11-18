@@ -34,6 +34,82 @@ interface RouteParams {
 }
 
 class LayoutVersionConflict extends Error {}
+class LayoutFarmNotFoundError extends Error {}
+class LayoutBadRequestError extends Error {}
+
+function validateLayoutForSave({
+  farm,
+  devices,
+  placements,
+  backgroundItems,
+  connections,
+  publish,
+}: {
+  farm: { id: string } | null;
+  devices: { id: string }[];
+  placements: FarmLayoutPlacement[];
+  backgroundItems: FarmLayoutData["backgroundItems"];
+  connections: FarmLayoutConnection[];
+  publish: boolean;
+}): Set<string> {
+  if (!farm) {
+    throw new LayoutFarmNotFoundError();
+  }
+
+  const allowedDeviceIds = new Set(devices.map((device) => device.id));
+
+  for (const placement of placements) {
+    if (
+      !allowedDeviceIds.has(placement.deviceId) &&
+      !isFarmDevicePresetKey(placement.presetKey)
+    ) {
+      throw new LayoutBadRequestError(
+        `Device ${placement.deviceId} does not belong to this farm`,
+      );
+    }
+  }
+
+  if (
+    publish &&
+    placements.some(
+      (placement) =>
+        placement.presetKey && !isDeviceType(placement.presetKey),
+    )
+  ) {
+    throw new LayoutBadRequestError("Unsupported device type in layout");
+  }
+
+  const placedIds = new Set(placements.map((placement) => placement.deviceId));
+  const backgroundItemIds = new Set(
+    backgroundItems.map((item) => item.id),
+  );
+  const connectionIds = new Set(connections.map((connection) => connection.id));
+
+  for (const connection of connections) {
+    if (
+      !hasValidConnectionEndpoint(
+        connection,
+        "from",
+        placedIds,
+        backgroundItemIds,
+        connectionIds,
+      ) ||
+      !hasValidConnectionEndpoint(
+        connection,
+        "to",
+        placedIds,
+        backgroundItemIds,
+        connectionIds,
+      )
+    ) {
+      throw new LayoutBadRequestError(
+        "A connection references an item that is not on this layout",
+      );
+    }
+  }
+
+  return allowedDeviceIds;
+}
 
 function remapConnectionDeviceIds(
   connection: FarmLayoutConnection,
@@ -325,71 +401,22 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 
   try {
-    const [farm, devices] = await Promise.all([
-      prisma.farm.findUnique({ where: { id }, select: { id: true } }),
-      prisma.device.findMany({ where: { farmId: id }, select: { id: true } }),
-    ]);
+    const { layout, publishedDeviceList, allowedDeviceIds } =
+      await prisma.$transaction(async (tx) => {
+        const [farm, devices] = await Promise.all([
+          tx.farm.findUnique({ where: { id }, select: { id: true } }),
+          tx.device.findMany({ where: { farmId: id }, select: { id: true } }),
+        ]);
 
-    if (!farm) {
-      return notFoundResponse("Farm not found");
-    }
+        const allowedDeviceIds = validateLayoutForSave({
+          farm,
+          devices,
+          placements,
+          backgroundItems,
+          connections,
+          publish,
+        });
 
-    const allowedDeviceIds = new Set(devices.map((device) => device.id));
-
-    for (const placement of placements) {
-      if (
-        !allowedDeviceIds.has(placement.deviceId) &&
-        !isFarmDevicePresetKey(placement.presetKey)
-      ) {
-        return badRequestResponse(
-          `Device ${placement.deviceId} does not belong to this farm`,
-        );
-      }
-    }
-
-    if (
-      publish &&
-      placements.some(
-        (placement) =>
-          placement.presetKey && !isDeviceType(placement.presetKey),
-      )
-    ) {
-      return badRequestResponse("Unsupported device type in layout");
-    }
-
-    const placedIds = new Set(placements.map((placement) => placement.deviceId));
-    const backgroundItemIds = new Set(
-      backgroundItems.map((item) => item.id),
-    );
-    const connectionIds = new Set(connections.map((connection) => connection.id));
-
-    for (const connection of connections) {
-      if (
-        !hasValidConnectionEndpoint(
-          connection,
-          "from",
-          placedIds,
-          backgroundItemIds,
-          connectionIds,
-        ) ||
-        !hasValidConnectionEndpoint(
-          connection,
-          "to",
-          placedIds,
-          backgroundItemIds,
-          connectionIds,
-        )
-      ) {
-        return badRequestResponse(
-          "A connection references an item that is not on this layout",
-        );
-      }
-    }
-
-    const publishedDevices: FarmLayoutDevice[] = [];
-
-    const { layout, publishedDeviceList } = await prisma.$transaction(
-      async (tx) => {
         const existing = await tx.farmLayout.findUnique({
           where: { farmId: id },
           select: { version: true },
@@ -497,26 +524,31 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           },
         });
 
-        return { layout, publishedDeviceList };
-      },
-    );
-
-    publishedDevices.push(...publishedDeviceList);
+        return { layout, publishedDeviceList, allowedDeviceIds };
+      });
 
     const responseDeviceIds = new Set([
       ...allowedDeviceIds,
-      ...publishedDevices.map((device) => device.id),
+      ...publishedDeviceList.map((device) => device.id),
     ]);
 
     return NextResponse.json({
       layout: serializeLayout(layout, responseDeviceIds),
-      publishedDevices,
+      publishedDevices: publishedDeviceList,
     });
   } catch (error) {
     if (error instanceof LayoutVersionConflict) {
       return conflictResponse(
         "Layout was changed by another admin. Refresh and try again.",
       );
+    }
+
+    if (error instanceof LayoutFarmNotFoundError) {
+      return notFoundResponse("Farm not found");
+    }
+
+    if (error instanceof LayoutBadRequestError) {
+      return badRequestResponse(error.message);
     }
 
     return serverErrorResponse("Save farm layout", error);

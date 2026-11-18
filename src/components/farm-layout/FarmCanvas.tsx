@@ -476,6 +476,40 @@ export default function FarmCanvas({
     () => new Map(backgroundItems.map((item) => [item.id, item])),
     [backgroundItems],
   );
+  const verticalGridLines = useMemo(
+    () =>
+      Array.from({ length: Math.floor(width / FARM_LAYOUT_GRID) + 1 }, (_, index) => (
+        <Line
+          key={`vertical-${index}`}
+          points={[
+            index * FARM_LAYOUT_GRID,
+            0,
+            index * FARM_LAYOUT_GRID,
+            height,
+          ]}
+          stroke="#315f2c"
+          strokeWidth={1}
+        />
+      )),
+    [height, width],
+  );
+  const horizontalGridLines = useMemo(
+    () =>
+      Array.from({ length: Math.floor(height / FARM_LAYOUT_GRID) + 1 }, (_, index) => (
+        <Line
+          key={`horizontal-${index}`}
+          points={[
+            0,
+            index * FARM_LAYOUT_GRID,
+            width,
+            index * FARM_LAYOUT_GRID,
+          ]}
+          stroke="#315f2c"
+          strokeWidth={1}
+        />
+      )),
+    [height, width],
+  );
   const selectedConnection =
     connections.find((connection) => connection.id === selectedConnectionId) ??
     null;
@@ -940,36 +974,8 @@ export default function FarmCanvas({
           />
           {snapToGrid ? (
             <Group listening={false} opacity={0.18}>
-              {Array.from({ length: Math.floor(width / FARM_LAYOUT_GRID) + 1 }).map(
-                (_, index) => (
-                  <Line
-                    key={`vertical-${index}`}
-                    points={[
-                      index * FARM_LAYOUT_GRID,
-                      0,
-                      index * FARM_LAYOUT_GRID,
-                      height,
-                    ]}
-                    stroke="#315f2c"
-                    strokeWidth={1}
-                  />
-                ),
-              )}
-              {Array.from({ length: Math.floor(height / FARM_LAYOUT_GRID) + 1 }).map(
-                (_, index) => (
-                  <Line
-                    key={`horizontal-${index}`}
-                    points={[
-                      0,
-                      index * FARM_LAYOUT_GRID,
-                      width,
-                      index * FARM_LAYOUT_GRID,
-                    ]}
-                    stroke="#315f2c"
-                    strokeWidth={1}
-                  />
-                ),
-              )}
+              {verticalGridLines}
+              {horizontalGridLines}
             </Group>
           ) : null}
           {alignmentGuides.vertical !== null ? (

@@ -9,11 +9,7 @@ import {
 } from "@/lib/api-helpers";
 import { prisma } from "@/lib/prisma";
 import { getRedis } from "@/lib/redis";
-import {
-  deviceMessageKey,
-  parseDeviceMessageEnvelope,
-  telemetryChannel,
-} from "@/lib/telemetry";
+import { parseDeviceMessageEnvelope, telemetryChannel } from "@/lib/telemetry";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -87,14 +83,6 @@ export async function GET(request: NextRequest) {
 
       try {
         const redis = await getRedis();
-        const cached = await redis.get(
-          deviceMessageKey(farmId, deviceId, "telemetry"),
-        );
-        const snapshot = cached ? parseDeviceMessageEnvelope(cached) : null;
-
-        if (snapshot) {
-          send(`event: telemetry\ndata: ${JSON.stringify(snapshot)}\n\n`);
-        }
 
         subscriber = redis.duplicate();
         await subscriber.connect();

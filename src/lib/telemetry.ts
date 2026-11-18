@@ -1,3 +1,11 @@
+import {
+  COMMAND_STATUS_FRESH_MS,
+  DEVICE_STATUS_FRESH_MS,
+  TELEMETRY_STALE_MS,
+} from "./freshness";
+
+export { COMMAND_STATUS_FRESH_MS, DEVICE_STATUS_FRESH_MS, TELEMETRY_STALE_MS };
+
 export type DeviceMessageKind = "status" | "telemetry";
 
 export interface DeviceMessageEnvelope {
@@ -30,9 +38,6 @@ export function deviceChannel(envelope: DeviceMessageEnvelope): string {
     ? statusChannel(envelope.farmId, envelope.deviceId)
     : telemetryChannel(envelope.farmId, envelope.deviceId);
 }
-
-export const DEVICE_STATUS_FRESH_MS = 60_000;
-export const COMMAND_STATUS_FRESH_MS = 10 * 60 * 1000;
 
 export type DeviceRuntimeState =
   | "RUNNING"
@@ -240,7 +245,7 @@ export function getMoisturePercent(
 
   const receivedAt = Date.parse(envelope.receivedAt);
 
-  if (!Number.isNaN(receivedAt) && now - receivedAt > DEVICE_STATUS_FRESH_MS) {
+  if (!Number.isNaN(receivedAt) && now - receivedAt > TELEMETRY_STALE_MS) {
     return null;
   }
 

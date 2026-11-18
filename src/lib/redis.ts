@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { createClient, type RedisClientType } from "redis";
+import { DEFAULT_CACHE_TTL_SECONDS } from "./freshness";
 import {
   deviceChannel,
   deviceMessageKey,
@@ -11,6 +13,12 @@ type Client = RedisClientType;
 interface RedisState {
   client: Client | null;
   connection: Promise<Client> | null;
+}
+
+export interface RefreshSession {
+  tokenHash: string;
+  familyId: string;
+  expiresAtSeconds: number;
 }
 
 const globalForRedis = globalThis as unknown as {
@@ -80,7 +88,7 @@ export async function getRedis(): Promise<Client> {
 
 export async function cacheDeviceStatus(
   envelope: DeviceMessageEnvelope,
-  ttlSeconds = 24 * 60 * 60,
+  ttlSeconds = DEFAULT_CACHE_TTL_SECONDS,
 ): Promise<void> {
   const redis = await getRedis();
   await redis.set(
@@ -108,25 +116,88 @@ export async function publishDeviceStatus(
   );
 }
 
+export function hashRefreshToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 function refreshTokenKey(userId: string): string {
   return `refresh_token:${userId}`;
 }
 
-export async function storeRefreshToken(
+function refreshFamilyKey(familyId: string): string {
+  return `refresh_family:${familyId}`;
+}
+
+function sessionTtlSeconds(expiresAtSeconds: number): number {
+  return Math.max(1, expiresAtSeconds - Math.floor(Date.now() / 1000));
+}
+
+function isRefreshSession(value: unknown): value is RefreshSession {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const session = value as Record<string, unknown>;
+
+  return (
+    typeof session.tokenHash === "string" &&
+    typeof session.familyId === "string" &&
+    typeof session.expiresAtSeconds === "number" &&
+    Number.isFinite(session.expiresAtSeconds)
+  );
+}
+
+export async function getRefreshSession(
   userId: string,
-  token: string,
-  ttlSeconds: number,
+): Promise<RefreshSession | null> {
+  const redis = await getRedis();
+  const raw = await redis.get(refreshTokenKey(userId));
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRefreshSession(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function storeRefreshSession(
+  userId: string,
+  session: RefreshSession,
 ): Promise<void> {
   const redis = await getRedis();
-  await redis.set(refreshTokenKey(userId), token, { EX: ttlSeconds });
+  const ttl = sessionTtlSeconds(session.expiresAtSeconds);
+
+  await redis
+    .multi()
+    .set(refreshTokenKey(userId), JSON.stringify(session), { EX: ttl })
+    .sAdd(refreshFamilyKey(session.familyId), userId)
+    .expire(refreshFamilyKey(session.familyId), ttl)
+    .exec();
 }
 
-export async function getRefreshToken(userId: string): Promise<string | null> {
+export async function deleteRefreshSession(userId: string): Promise<void> {
   const redis = await getRedis();
-  return redis.get(refreshTokenKey(userId));
+  const session = await getRefreshSession(userId);
+  const multi = redis.multi().del(refreshTokenKey(userId));
+
+  if (session) {
+    multi.sRem(refreshFamilyKey(session.familyId), userId);
+  }
+
+  await multi.exec();
 }
 
-export async function deleteRefreshToken(userId: string): Promise<void> {
+export async function revokeRefreshFamily(familyId: string): Promise<void> {
   const redis = await getRedis();
-  await redis.del(refreshTokenKey(userId));
+  const members = await redis.sMembers(refreshFamilyKey(familyId));
+  const keys = Array.from(members, (member) =>
+    refreshTokenKey(String(member)),
+  );
+
+  await redis.multi().del([...keys, refreshFamilyKey(familyId)]).exec();
 }

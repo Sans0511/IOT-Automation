@@ -2,14 +2,29 @@ async function main() {
   await import("dotenv/config");
   const { default: mqtt } = await import("mqtt");
 
-  const brokerUrl =
-    process.env.MQTT_BROKER_URL ?? "mqtt://broker.hivemq.com:1883";
-  const farmId = process.env.FARM_ID ?? "6afc823555b4ff51a7320c25";
-  const sensorId = process.env.DEVICE_ID ?? "6afd34bc265f045f0f08ec79";
-  const pumpId = process.env.PUMP_DEVICE_ID ?? "6afcd5ff265f045f0f08ec73";
-  const valve1Id = process.env.VALVE_1_DEVICE_ID ?? "6afcd5ff265f045f0f08ec74";
-  const valve2Id = process.env.VALVE_2_DEVICE_ID ?? "6afd0ddf265f045f0f08ec77";
-  const rainId = process.env.RAIN_DEVICE_ID ?? "6afd50ef6f5050ec44260c32";
+  const requiredEnv = [
+    "MQTT_BROKER_URL",
+    "FARM_ID",
+    "DEVICE_ID",
+    "PUMP_DEVICE_ID",
+    "VALVE_1_DEVICE_ID",
+    "VALVE_2_DEVICE_ID",
+    "RAIN_DEVICE_ID",
+  ];
+
+  for (const name of requiredEnv) {
+    if (!process.env[name]) {
+      throw new Error(`${name} is required`);
+    }
+  }
+
+  const brokerUrl = process.env.MQTT_BROKER_URL;
+  const farmId = process.env.FARM_ID;
+  const sensorId = process.env.DEVICE_ID;
+  const pumpId = process.env.PUMP_DEVICE_ID;
+  const valve1Id = process.env.VALVE_1_DEVICE_ID;
+  const valve2Id = process.env.VALVE_2_DEVICE_ID;
+  const rainId = process.env.RAIN_DEVICE_ID;
   const intervalMs = Number(process.env.INTERVAL_MS ?? "1000");
   const telemetryTopic = `farm/${farmId}/device/${sensorId}/telemetry`;
   const statusTopic = (deviceId) =>

@@ -2,6 +2,11 @@ import "dotenv/config";
 
 import { randomUUID } from "crypto";
 import { connect, type MqttClient } from "mqtt";
+import {
+  DEFAULT_CACHE_TTL_SECONDS,
+  STALE_CHECK_INTERVAL_MS,
+  TELEMETRY_STALE_MS,
+} from "../src/lib/freshness";
 import { getMqttBrokerUrl } from "../src/lib/mqttClient";
 import { getRedis, publishDeviceStatus, publishTelemetry } from "../src/lib/redis";
 import {
@@ -13,9 +18,6 @@ import {
 const STATUS_TOPIC = "farm/+/device/+/status";
 const TELEMETRY_TOPIC = "farm/+/device/+/telemetry";
 const TOPIC_PATTERN = /^farm\/([^/]+)\/device\/([^/]+)\/(status|telemetry)$/;
-const DEFAULT_CACHE_TTL_SECONDS = 24 * 60 * 60;
-const TELEMETRY_STALE_MS = 60_000;
-const STALE_CHECK_INTERVAL_MS = 10_000;
 const RECONNECT_DELAY_MS = 2_000;
 const CONNECT_TIMEOUT_MS = 10_000;
 
