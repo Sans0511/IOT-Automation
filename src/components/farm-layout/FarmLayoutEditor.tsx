@@ -373,6 +373,16 @@ export default function FarmLayoutEditor({
         };
   }
 
+  function isPortEndpoint(endpoint: FarmFlowEndpointRef): boolean {
+    if (endpoint.kind === "device") {
+      return Boolean(endpoint.port);
+    }
+    if (endpoint.kind === "backgroundItem") {
+      return Boolean(endpoint.port);
+    }
+    return false;
+  }
+
   function finishFlow(target: FarmFlowEndpointRef) {
     if (!linkSource) {
       return;
@@ -381,8 +391,14 @@ export default function FarmLayoutEditor({
     const resolvedSource = snapFlowEndpoint(linkSource);
     const resolvedTarget = snapFlowEndpoint(target);
 
+    if (!isPortEndpoint(resolvedSource) || !isPortEndpoint(resolvedTarget)) {
+      setMessage("Flows must start and end at ports.");
+      setError(null);
+      return;
+    }
+
     if (sameFlowEndpoint(resolvedSource, resolvedTarget)) {
-      setMessage("Pick a different end point for this flow.");
+      setMessage("Pick a different end port for this flow.");
       return;
     }
 
@@ -398,7 +414,7 @@ export default function FarmLayoutEditor({
     });
 
     if (alreadyLinked) {
-      setMessage("These points are already linked.");
+      setMessage("These ports are already linked.");
     } else {
       setLayout((current) => ({
         ...current,
@@ -418,17 +434,25 @@ export default function FarmLayoutEditor({
   }
 
   function startOrFinishFlow(endpoint: FarmFlowEndpointRef) {
+    const resolved = snapFlowEndpoint(endpoint);
+
+    if (!isPortEndpoint(resolved)) {
+      setMessage("Flows must start and end at ports.");
+      setError(null);
+      return;
+    }
+
     if (!linkSource) {
-      setLinkSource(endpoint);
+      setLinkSource(resolved);
       setDraftWaypoints([]);
       setMessage(
-        "Start set. Click empty canvas to add bends, then click the end point — or double-click / press Enter to end at a free point.",
+        "Start port set. Click empty canvas to add bends, then click an end port.",
       );
       setError(null);
       return;
     }
 
-    finishFlow(endpoint);
+    finishFlow(resolved);
   }
 
   function handleCanvasSelectDevice(
@@ -479,13 +503,12 @@ export default function FarmLayoutEditor({
     }
 
     if (!linkSource) {
-      startOrFinishFlow({ kind: "point", point });
+      setMessage("Start the flow by clicking a device or background port.");
+      setError(null);
       return;
     }
 
-    const lastPoint =
-      draftWaypoints[draftWaypoints.length - 1] ??
-      (linkSource.kind === "point" ? linkSource.point : null);
+    const lastPoint = draftWaypoints[draftWaypoints.length - 1];
 
     if (
       lastPoint &&
@@ -496,27 +519,7 @@ export default function FarmLayoutEditor({
     }
 
     setDraftWaypoints((current) => [...current, point]);
-    setMessage(
-      `Bend point ${draftWaypoints.length + 1} added. Click the end point, or double-click / press Enter to finish at a free point.`,
-    );
-  }
-
-  function handleSelectFlowConnection(connectionId: string, point: FarmPoint) {
-    if (!linkMode) {
-      handleSelectConnection(connectionId);
-      return;
-    }
-
-    startOrFinishFlow({ kind: "connection", connectionId, point });
-  }
-
-  function handleFinishFlow(point: FarmPoint) {
-    if (!linkSource) {
-      setMessage("Click a starting point first.");
-      return;
-    }
-
-    finishFlow({ kind: "point", point });
+    setMessage(`Bend point ${draftWaypoints.length + 1} added. Click an end port.`);
   }
 
   function handleMoveWaypoint(
@@ -1202,32 +1205,13 @@ export default function FarmLayoutEditor({
                 {linkMode ? "Drawing flow" : "Draw flow"}
               </button>
               {linkMode && linkSource ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const last =
-                        draftWaypoints[draftWaypoints.length - 1];
-                      if (last) {
-                        handleFinishFlow(last);
-                      } else {
-                        setMessage(
-                          "Click the canvas to choose an end point, or press Enter.",
-                        );
-                      }
-                    }}
-                    className="rounded-lg border border-sky-300 px-3 py-2 text-xs font-medium text-sky-700 transition hover:bg-sky-50 dark:border-sky-700 dark:text-sky-300 dark:hover:bg-sky-950/40"
-                  >
-                    Finish here
-                  </button>
-                  <button
-                    type="button"
-                    onClick={cancelFlow}
-                    className="rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
-                  >
-                    Cancel flow
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={cancelFlow}
+                  className="rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
+                >
+                  Cancel flow
+                </button>
               ) : null}
             <button
               type="button"
@@ -1322,12 +1306,11 @@ export default function FarmLayoutEditor({
           onto the canvas. While dragging, items snap-align to other items with
           pink guides. Select an item to edit its position, label, or
           rotation, or use the toolbar to rotate/delete it. With Draw flow on,
-          drag from a device port and drop on a target, or click a start point
-          (device/port, background item, empty canvas, or an existing flow
-          line), click empty canvas to add bends, then click the end point — or
-          double-click / press Enter to end at a free point. Select a line to
-          drag its waypoints and endpoints. Copy/Paste (or Ctrl/Cmd+C and
-          Ctrl/Cmd+V) duplicates the selected palette device or background item.
+          start and end every line at a device or background port. Click empty
+          canvas to add bends. Centers, free points, and existing flow lines
+          cannot be flow endpoints. Select a line to drag its waypoints.
+          Copy/Paste (or Ctrl/Cmd+C and Ctrl/Cmd+V) duplicates the selected
+          palette device or background item.
         </p>
 
         {error ? (
@@ -1394,9 +1377,7 @@ export default function FarmLayoutEditor({
             onSelect={handleCanvasSelectDevice}
             onSelectConnection={handleSelectConnection}
             onCanvasFlowPoint={handleCanvasFlowPoint}
-            onFinishFlow={handleFinishFlow}
             onCancelFlow={cancelFlow}
-            onSelectFlowConnection={handleSelectFlowConnection}
             onMoveWaypoint={handleMoveWaypoint}
             onMoveFlowEndpoint={handleMoveFlowEndpoint}
             onAddDevice={handleAddDevice}

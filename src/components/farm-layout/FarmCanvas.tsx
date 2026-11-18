@@ -63,9 +63,7 @@ type FarmCanvasProps = {
   onSelect: (deviceId: string | null, port?: FarmDevicePort) => void;
   onSelectConnection: (connectionId: string | null) => void;
   onCanvasFlowPoint: (point: FarmPoint) => void;
-  onFinishFlow: (point: FarmPoint) => void;
   onCancelFlow: () => void;
-  onSelectFlowConnection: (connectionId: string, point: FarmPoint) => void;
   onMoveWaypoint: (
     connectionId: string,
     index: number,
@@ -396,9 +394,7 @@ export default function FarmCanvas({
   onSelect,
   onSelectConnection,
   onCanvasFlowPoint,
-  onFinishFlow,
   onCancelFlow,
-  onSelectFlowConnection,
   onMoveWaypoint,
   onMoveFlowEndpoint,
   onAddDevice,
@@ -418,7 +414,6 @@ export default function FarmCanvas({
     vertical: number | null;
     horizontal: number | null;
   }>({ vertical: null, horizontal: null });
-  const pointerRef = useRef<FarmPoint | null>(null);
   const draggingFlowRef = useRef(false);
   const dragStartPointRef = useRef<FarmPoint | null>(null);
 
@@ -449,11 +444,6 @@ export default function FarmCanvas({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Enter" && pointerRef.current) {
-        event.preventDefault();
-        onFinishFlow(pointerRef.current);
-      }
-
       if (event.key === "Escape") {
         event.preventDefault();
         onCancelFlow();
@@ -462,7 +452,7 @@ export default function FarmCanvas({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [linkMode, linkSource, onFinishFlow, onCancelFlow]);
+  }, [linkMode, linkSource, onCancelFlow]);
 
   const devicesById = useMemo(
     () => new Map(devices.map((device) => [device.id, device])),
@@ -493,7 +483,7 @@ export default function FarmCanvas({
     return toContent(stage?.getPointerPosition() ?? { x: 0, y: 0 });
   }
 
-  function selectNearbyPortOr(point: FarmPoint, fallback: () => void) {
+  function selectNearbyPort(point: FarmPoint): boolean {
     const nearbyPort = findNearbyFarmFlowPort(
       point,
       placements,
@@ -502,16 +492,16 @@ export default function FarmCanvas({
     );
 
     if (!nearbyPort) {
-      fallback();
-      return;
+      return false;
     }
 
     if (nearbyPort.kind === "device") {
       onSelect(nearbyPort.deviceId, nearbyPort.port);
-      return;
+      return true;
     }
 
     onSelectBackgroundItem(nearbyPort.backgroundItemId, nearbyPort.port);
+    return true;
   }
 
   function resolveEndpoint(
@@ -726,9 +716,6 @@ export default function FarmCanvas({
     const start = dragStartPointRef.current;
     const port = event.target.findAncestor(".flow-port", true);
     const backgroundPort = event.target.findAncestor(".flow-background-port", true);
-    const device = event.target.findAncestor(".flow-device", true);
-    const background = event.target.findAncestor(".flow-background", true);
-    const line = event.target.findAncestor(".flow-line", true);
 
     dragStartPointRef.current = null;
 
@@ -741,46 +728,33 @@ export default function FarmCanvas({
       return;
     }
 
-    selectNearbyPortOr(point, () => {
-      if (port) {
-        const portId = port.id() ?? "";
-        const separatorIndex = portId.indexOf(":");
-        const deviceId = separatorIndex === -1 ? "" : portId.slice(0, separatorIndex);
-        const portName = separatorIndex === -1 ? "" : portId.slice(separatorIndex + 1);
-        if (deviceId && isFarmDevicePort(portName)) {
-          onSelect(deviceId, portName);
-          return;
-        }
-      }
-
-      if (backgroundPort) {
-        const portId = backgroundPort.id() ?? "";
-        const separatorIndex = portId.indexOf(":");
-        const itemId = separatorIndex === -1 ? "" : portId.slice(0, separatorIndex);
-        const side = separatorIndex === -1 ? "" : portId.slice(separatorIndex + 1);
-        if (itemId && isFarmBackgroundPortSide(side)) {
-          onSelectBackgroundItem(itemId, side);
-          return;
-        }
-      }
-
-      if (device?.id()) {
-        onSelect(device.id());
+    if (port) {
+      const portId = port.id() ?? "";
+      const separatorIndex = portId.indexOf(":");
+      const deviceId = separatorIndex === -1 ? "" : portId.slice(0, separatorIndex);
+      const portName = separatorIndex === -1 ? "" : portId.slice(separatorIndex + 1);
+      if (deviceId && isFarmDevicePort(portName)) {
+        onSelect(deviceId, portName);
         return;
       }
+    }
 
-      if (background?.id()) {
-        onSelectBackgroundItem(background.id());
+    if (backgroundPort) {
+      const portId = backgroundPort.id() ?? "";
+      const separatorIndex = portId.indexOf(":");
+      const itemId = separatorIndex === -1 ? "" : portId.slice(0, separatorIndex);
+      const side = separatorIndex === -1 ? "" : portId.slice(separatorIndex + 1);
+      if (itemId && isFarmBackgroundPortSide(side)) {
+        onSelectBackgroundItem(itemId, side);
         return;
       }
+    }
 
-      if (line?.id()) {
-        onSelectFlowConnection(line.id(), point);
-        return;
-      }
+    if (selectNearbyPort(point)) {
+      return;
+    }
 
-      onFinishFlow(point);
-    });
+    onCanvasFlowPoint(point);
   }
 
   function handleDrop(event: ReactDragEvent<HTMLDivElement>) {
@@ -875,7 +849,10 @@ export default function FarmCanvas({
           if (linkMode) {
             const point = stagePointerToContent(stage);
             setDraftPoint(point);
-            selectNearbyPortOr(point, () => onCanvasFlowPoint(point));
+
+            if (!selectNearbyPort(point)) {
+              onCanvasFlowPoint(point);
+            }
             return;
           }
 
@@ -893,7 +870,10 @@ export default function FarmCanvas({
           if (linkMode) {
             const point = stagePointerToContent(stage);
             setDraftPoint(point);
-            selectNearbyPortOr(point, () => onCanvasFlowPoint(point));
+
+            if (!selectNearbyPort(point)) {
+              onCanvasFlowPoint(point);
+            }
             return;
           }
 
@@ -904,30 +884,11 @@ export default function FarmCanvas({
         onMouseMove={(event) => {
           if (linkMode) {
             const point = stagePointerToContent(event.target.getStage());
-            pointerRef.current = point;
 
             if (linkSource) {
               setDraftPoint(point);
             }
           }
-        }}
-        onDblClick={(event) => {
-          if (!linkMode || !linkSource || event.target !== event.target.getStage()) {
-            return;
-          }
-
-          event.evt.preventDefault();
-          const point = stagePointerToContent(event.target.getStage());
-          selectNearbyPortOr(point, () => onFinishFlow(point));
-        }}
-        onDblTap={(event) => {
-          if (!linkMode || !linkSource || event.target !== event.target.getStage()) {
-            return;
-          }
-
-          event.evt.preventDefault();
-          const point = stagePointerToContent(event.target.getStage());
-          selectNearbyPortOr(point, () => onFinishFlow(point));
         }}
         onMouseUp={handleFlowPointerUp}
         onTouchEnd={handleFlowPointerUp}
@@ -1024,12 +985,6 @@ export default function FarmCanvas({
                 toOffset={target.offset}
                 selected={selectedConnectionId === connection.id}
                 onSelect={() => onSelectConnection(connection.id)}
-                onSelectAt={
-                  linkMode
-                    ? (pointer) =>
-                        onSelectFlowConnection(connection.id, toContent(pointer))
-                    : undefined
-                }
               />
             );
           })}
