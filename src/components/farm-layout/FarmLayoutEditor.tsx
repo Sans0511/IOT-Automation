@@ -17,12 +17,14 @@ import {
   createPresetDevice,
   createPresetDeviceId,
   derivePresetDevices,
-  findNearbyFarmDevicePort,
   FARM_CANVAS_HEIGHT,
   FARM_CANVAS_WIDTH,
   FARM_BACKGROUND_LABELS,
+  FARM_BACKGROUND_PORT_LABELS,
   FARM_DEVICE_PORT_LABELS,
+  findNearbyFarmFlowPort,
   type FarmBackgroundItemType,
+  type FarmBackgroundPortSide,
   type FarmDevicePort,
   type FarmDevicePresetKey,
   type FarmFlowEndpointRef,
@@ -167,7 +169,10 @@ export default function FarmLayoutEditor({
     }
 
     if (left.kind === "backgroundItem" && right.kind === "backgroundItem") {
-      return left.backgroundItemId === right.backgroundItemId;
+      return (
+        left.backgroundItemId === right.backgroundItemId &&
+        left.port === right.port
+      );
     }
 
     if (left.kind === "connection" && right.kind === "connection") {
@@ -236,6 +241,9 @@ export default function FarmLayoutEditor({
         return {
           kind: "backgroundItem",
           backgroundItemId: connection.fromBackgroundItemId,
+          ...(connection.fromBackgroundPort
+            ? { port: connection.fromBackgroundPort }
+            : {}),
         };
       }
       if (connection.fromConnectionId && connection.fromPoint) {
@@ -261,6 +269,9 @@ export default function FarmLayoutEditor({
       return {
         kind: "backgroundItem",
         backgroundItemId: connection.toBackgroundItemId,
+        ...(connection.toBackgroundPort
+          ? { port: connection.toBackgroundPort }
+          : {}),
       };
     }
     if (connection.toConnectionId && connection.toPoint) {
@@ -273,6 +284,37 @@ export default function FarmLayoutEditor({
     return connection.toPoint
       ? { kind: "point", point: connection.toPoint }
       : null;
+  }
+
+  function endpointPortLabel(
+    connection: FarmLayoutConnection,
+    side: "from" | "to",
+  ): string {
+    const devicePort = side === "from" ? connection.fromPort : connection.toPort;
+    const backgroundPort =
+      side === "from"
+        ? connection.fromBackgroundPort
+        : connection.toBackgroundPort;
+    const connectionId =
+      side === "from"
+        ? connection.fromConnectionId
+        : connection.toConnectionId;
+    const point = side === "from" ? connection.fromPoint : connection.toPoint;
+
+    if (devicePort) {
+      return FARM_DEVICE_PORT_LABELS[devicePort];
+    }
+    if (backgroundPort) {
+      return FARM_BACKGROUND_PORT_LABELS[backgroundPort];
+    }
+    if (connectionId) {
+      return "On flow line";
+    }
+    if (point) {
+      return "Free point";
+    }
+
+    return "Center";
   }
 
   function handleSelectDevice(deviceId: string | null) {
@@ -307,19 +349,28 @@ export default function FarmLayoutEditor({
       return endpoint;
     }
 
-    const nearbyPort = findNearbyFarmDevicePort(
+    const nearbyPort = findNearbyFarmFlowPort(
       endpoint.point,
       layout.placements,
       allDevices,
+      layout.backgroundItems,
     );
 
-    return nearbyPort
+    if (!nearbyPort) {
+      return endpoint;
+    }
+
+    return nearbyPort.kind === "device"
       ? {
           kind: "device",
           deviceId: nearbyPort.deviceId,
           port: nearbyPort.port,
         }
-      : endpoint;
+      : {
+          kind: "backgroundItem",
+          backgroundItemId: nearbyPort.backgroundItemId,
+          port: nearbyPort.port,
+        };
   }
 
   function finishFlow(target: FarmFlowEndpointRef) {
@@ -401,7 +452,10 @@ export default function FarmLayoutEditor({
     });
   }
 
-  function handleCanvasSelectBackgroundItem(itemId: string | null) {
+  function handleCanvasSelectBackgroundItem(
+    itemId: string | null,
+    port?: FarmBackgroundPortSide,
+  ) {
     if (!linkMode) {
       handleSelectBackgroundItem(itemId);
       return;
@@ -412,7 +466,11 @@ export default function FarmLayoutEditor({
       return;
     }
 
-    startOrFinishFlow({ kind: "backgroundItem", backgroundItemId: itemId });
+    startOrFinishFlow({
+      kind: "backgroundItem",
+      backgroundItemId: itemId,
+      ...(port ? { port } : {}),
+    });
   }
 
   function handleCanvasFlowPoint(point: FarmPoint) {
@@ -1362,21 +1420,9 @@ export default function FarmLayoutEditor({
               {connectionLabel(selectedConnection, "to")}
             </p>
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              {selectedConnection.fromPort
-                ? FARM_DEVICE_PORT_LABELS[selectedConnection.fromPort]
-                : selectedConnection.fromConnectionId
-                  ? "On flow line"
-                  : selectedConnection.fromPoint
-                    ? "Free point"
-                    : "Center"}
+              {endpointPortLabel(selectedConnection, "from")}
               <span className="mx-2">→</span>
-              {selectedConnection.toPort
-                ? FARM_DEVICE_PORT_LABELS[selectedConnection.toPort]
-                : selectedConnection.toConnectionId
-                  ? "On flow line"
-                  : selectedConnection.toPoint
-                    ? "Free point"
-                    : "Center"}
+              {endpointPortLabel(selectedConnection, "to")}
             </p>
             <button
               type="button"

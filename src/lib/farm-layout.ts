@@ -31,6 +31,28 @@ export type FarmLayoutBackgroundItem = {
   scale: number;
 };
 
+export const FARM_BACKGROUND_PORT_SIDES = [
+  "top",
+  "right",
+  "bottom",
+  "left",
+] as const;
+
+export type FarmBackgroundPortSide =
+  (typeof FARM_BACKGROUND_PORT_SIDES)[number];
+
+export const FARM_BACKGROUND_PORT_OFFSET = 50;
+
+export const FARM_BACKGROUND_PORT_LABELS: Record<
+  FarmBackgroundPortSide,
+  string
+> = {
+  top: "Top",
+  right: "Right",
+  bottom: "Bottom",
+  left: "Left",
+};
+
 export const FARM_DEVICE_PRESET_LABELS = {
   MOTOR_PUMP: "Motor Pump",
   SOLENOID_VALVE: "Solenoid Valve",
@@ -57,6 +79,9 @@ export type FarmDevicePort =
   | "inlet-left"
   | "outlet-right"
   | "outlet-bottom";
+export type FarmDevicePortValue =
+  | FarmDevicePort
+  | `${FarmDevicePortRole}-${FarmDevicePortSide}`;
 
 export const FARM_DEVICE_PORT_LABELS: Record<FarmDevicePort, string> = {
   inlet: "Incoming",
@@ -84,7 +109,11 @@ export type FarmPoint = { x: number; y: number };
 
 export type FarmFlowEndpointRef =
   | { kind: "device"; deviceId: string; port?: FarmDevicePort }
-  | { kind: "backgroundItem"; backgroundItemId: string }
+  | {
+      kind: "backgroundItem";
+      backgroundItemId: string;
+      port?: FarmBackgroundPortSide;
+    }
   | { kind: "connection"; connectionId: string; point: FarmPoint }
   | { kind: "point"; point: FarmPoint };
 
@@ -92,10 +121,12 @@ export type FarmLayoutConnection = {
   id: string;
   fromDeviceId?: string;
   fromBackgroundItemId?: string;
+  fromBackgroundPort?: FarmBackgroundPortSide;
   fromConnectionId?: string;
   fromPoint?: FarmPoint;
   toDeviceId?: string;
   toBackgroundItemId?: string;
+  toBackgroundPort?: FarmBackgroundPortSide;
   toConnectionId?: string;
   toPoint?: FarmPoint;
   fromPort?: FarmDevicePort;
@@ -294,6 +325,129 @@ export function findNearbyFarmDevicePort(
   return closest;
 }
 
+export function isFarmBackgroundPortSide(
+  value: unknown,
+): value is FarmBackgroundPortSide {
+  return (
+    typeof value === "string" &&
+    FARM_BACKGROUND_PORT_SIDES.includes(value as FarmBackgroundPortSide)
+  );
+}
+
+export function getFarmBackgroundPortLocalPoint(
+  side: FarmBackgroundPortSide,
+): FarmPoint {
+  const vector = FARM_DEVICE_PORT_SIDE_VECTORS[side];
+
+  return {
+    x: vector.x * FARM_BACKGROUND_PORT_OFFSET,
+    y: vector.y * FARM_BACKGROUND_PORT_OFFSET,
+  };
+}
+
+export function getFarmBackgroundPortPoint(
+  item: FarmLayoutBackgroundItem,
+  side: FarmBackgroundPortSide,
+): FarmPoint {
+  const local = getFarmBackgroundPortLocalPoint(side);
+  const scaled = { x: local.x * item.scale, y: local.y * item.scale };
+  const radians = (item.rotation * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+
+  return {
+    x: item.x + scaled.x * cos - scaled.y * sin,
+    y: item.y + scaled.x * sin + scaled.y * cos,
+  };
+}
+
+export function findNearbyFarmBackgroundPort(
+  point: FarmPoint,
+  items: FarmLayoutBackgroundItem[],
+  maxDistance = FARM_FLOW_PORT_SNAP_DISTANCE,
+): {
+  backgroundItemId: string;
+  port: FarmBackgroundPortSide;
+  point: FarmPoint;
+  distance: number;
+} | null {
+  let closest: {
+    backgroundItemId: string;
+    port: FarmBackgroundPortSide;
+    point: FarmPoint;
+    distance: number;
+  } | null = null;
+
+  for (const item of items) {
+    for (const side of FARM_BACKGROUND_PORT_SIDES) {
+      const portPoint = getFarmBackgroundPortPoint(item, side);
+      const distance = Math.hypot(
+        point.x - portPoint.x,
+        point.y - portPoint.y,
+      );
+
+      if (distance <= maxDistance && (!closest || distance < closest.distance)) {
+        closest = {
+          backgroundItemId: item.id,
+          port: side,
+          point: portPoint,
+          distance,
+        };
+      }
+    }
+  }
+
+  return closest;
+}
+
+export type FarmFlowPortMatch =
+  | {
+      kind: "device";
+      deviceId: string;
+      port: FarmDevicePort;
+      point: FarmPoint;
+      distance: number;
+    }
+  | {
+      kind: "backgroundItem";
+      backgroundItemId: string;
+      port: FarmBackgroundPortSide;
+      point: FarmPoint;
+      distance: number;
+    };
+
+export function findNearbyFarmFlowPort(
+  point: FarmPoint,
+  placements: FarmLayoutPlacement[],
+  devices: FarmLayoutDevice[],
+  backgroundItems: FarmLayoutBackgroundItem[],
+  maxDistance = FARM_FLOW_PORT_SNAP_DISTANCE,
+): FarmFlowPortMatch | null {
+  const devicePort = findNearbyFarmDevicePort(
+    point,
+    placements,
+    devices,
+    maxDistance,
+  );
+  const backgroundPort = findNearbyFarmBackgroundPort(
+    point,
+    backgroundItems,
+    maxDistance,
+  );
+
+  if (!devicePort) {
+    return backgroundPort
+      ? { kind: "backgroundItem", ...backgroundPort }
+      : null;
+  }
+
+  if (!backgroundPort || devicePort.distance <= backgroundPort.distance) {
+    return { kind: "device", ...devicePort };
+  }
+
+  return { kind: "backgroundItem", ...backgroundPort };
+}
+
 export const DEVICE_TYPE_LABELS: Record<string, string> = {
   VALVE: "Valve",
   PUMP: "Pump",
@@ -385,6 +539,9 @@ export function createFarmFlowConnection(
     }
   } else if (from.kind === "backgroundItem") {
     connection.fromBackgroundItemId = from.backgroundItemId;
+    if (from.port) {
+      connection.fromBackgroundPort = from.port;
+    }
   } else if (from.kind === "connection") {
     connection.fromConnectionId = from.connectionId;
     connection.fromPoint = copyPoint(from.point);
@@ -399,6 +556,9 @@ export function createFarmFlowConnection(
     }
   } else if (to.kind === "backgroundItem") {
     connection.toBackgroundItemId = to.backgroundItemId;
+    if (to.port) {
+      connection.toBackgroundPort = to.port;
+    }
   } else if (to.kind === "connection") {
     connection.toConnectionId = to.connectionId;
     connection.toPoint = copyPoint(to.point);
@@ -429,10 +589,15 @@ export function createFarmBackgroundConnection(
   fromDeviceId: string,
   toBackgroundItemId: string,
   fromPort?: FarmDevicePort,
+  toBackgroundPort?: FarmBackgroundPortSide,
 ): FarmLayoutConnection {
   return createFarmFlowConnection(
     { kind: "device", deviceId: fromDeviceId, ...(fromPort ? { port: fromPort } : {}) },
-    { kind: "backgroundItem", backgroundItemId: toBackgroundItemId },
+    {
+      kind: "backgroundItem",
+      backgroundItemId: toBackgroundItemId,
+      ...(toBackgroundPort ? { port: toBackgroundPort } : {}),
+    },
   );
 }
 
@@ -454,6 +619,64 @@ export function isFarmDevicePort(value: unknown): value is FarmDevicePort {
     FARM_DEVICE_PORT_SIDES.includes(parsedSide) &&
     FARM_DEVICE_PORT_SIDE_ROLES[parsedSide] === role
   );
+}
+
+export function isFarmDevicePortValue(
+  value: unknown,
+): value is FarmDevicePortValue {
+  if (value === "inlet" || value === "outlet") {
+    return true;
+  }
+
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const [role, side, ...rest] = value.split("-");
+
+  return (
+    rest.length === 0 &&
+    (role === "inlet" || role === "outlet") &&
+    FARM_DEVICE_PORT_SIDES.includes(side as FarmDevicePortSide)
+  );
+}
+
+export function normalizeFarmDevicePort(
+  value: FarmDevicePortValue,
+): FarmDevicePort {
+  if (isFarmDevicePort(value)) {
+    return value;
+  }
+
+  const { role, side } = parseFarmDevicePort(value as FarmDevicePort);
+
+  if (!side) {
+    return value as FarmDevicePort;
+  }
+
+  const candidates =
+    role === "inlet" ? FARM_DEVICE_INLET_PORTS : FARM_DEVICE_OUTLET_PORTS;
+  const source = FARM_DEVICE_PORT_SIDE_VECTORS[side];
+  let best = candidates[0];
+  let bestDistance = Infinity;
+
+  for (const candidate of candidates) {
+    const candidateSide = getFarmDevicePortSide(candidate);
+
+    if (!candidateSide) {
+      continue;
+    }
+
+    const vector = FARM_DEVICE_PORT_SIDE_VECTORS[candidateSide];
+    const distance = Math.hypot(source.x - vector.x, source.y - vector.y);
+
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+
+  return best;
 }
 
 export function isFarmDevicePresetKey(
@@ -616,10 +839,12 @@ export function parseFarmConnections(
       id,
       fromDeviceId,
       fromBackgroundItemId,
+      fromBackgroundPort,
       fromConnectionId,
       fromPoint,
       toDeviceId,
       toBackgroundItemId,
+      toBackgroundPort,
       toConnectionId,
       toPoint,
       fromPort,
@@ -661,10 +886,16 @@ export function parseFarmConnections(
       (toPoint !== undefined && !parsedToPoint) ||
       (hasId(fromConnectionId) && !parsedFromPoint) ||
       (hasId(toConnectionId) && !parsedToPoint) ||
-      (fromPort !== undefined && !isFarmDevicePort(fromPort)) ||
-      (toPort !== undefined && !isFarmDevicePort(toPort)) ||
+      (fromPort !== undefined && !isFarmDevicePortValue(fromPort)) ||
+      (toPort !== undefined && !isFarmDevicePortValue(toPort)) ||
+      (fromBackgroundPort !== undefined &&
+        !isFarmBackgroundPortSide(fromBackgroundPort)) ||
+      (toBackgroundPort !== undefined &&
+        !isFarmBackgroundPortSide(toBackgroundPort)) ||
       (sourceKinds[0] !== "device" && fromPort !== undefined) ||
       (targetKinds[0] !== "device" && toPort !== undefined) ||
+      (sourceKinds[0] !== "background" && fromBackgroundPort !== undefined) ||
+      (targetKinds[0] !== "background" && toBackgroundPort !== undefined) ||
       (hasId(fromDeviceId) && hasId(toDeviceId) && fromDeviceId === toDeviceId) ||
       (hasId(fromConnectionId) && fromConnectionId === id) ||
       (hasId(toConnectionId) && toConnectionId === id)
@@ -698,6 +929,9 @@ export function parseFarmConnections(
     if (hasId(fromBackgroundItemId)) {
       connection.fromBackgroundItemId = fromBackgroundItemId;
     }
+    if (isFarmBackgroundPortSide(fromBackgroundPort)) {
+      connection.fromBackgroundPort = fromBackgroundPort;
+    }
     if (hasId(fromConnectionId) && parsedFromPoint) {
       connection.fromConnectionId = fromConnectionId;
       connection.fromPoint = parsedFromPoint;
@@ -711,6 +945,9 @@ export function parseFarmConnections(
     if (hasId(toBackgroundItemId)) {
       connection.toBackgroundItemId = toBackgroundItemId;
     }
+    if (isFarmBackgroundPortSide(toBackgroundPort)) {
+      connection.toBackgroundPort = toBackgroundPort;
+    }
     if (hasId(toConnectionId) && parsedToPoint) {
       connection.toConnectionId = toConnectionId;
       connection.toPoint = parsedToPoint;
@@ -718,11 +955,11 @@ export function parseFarmConnections(
     if (parsedToPoint && !hasId(toConnectionId)) {
       connection.toPoint = parsedToPoint;
     }
-    if (isFarmDevicePort(fromPort)) {
-      connection.fromPort = fromPort;
+    if (isFarmDevicePortValue(fromPort)) {
+      connection.fromPort = normalizeFarmDevicePort(fromPort);
     }
-    if (isFarmDevicePort(toPort)) {
-      connection.toPort = toPort;
+    if (isFarmDevicePortValue(toPort)) {
+      connection.toPort = normalizeFarmDevicePort(toPort);
     }
     if (parsedWaypoints && parsedWaypoints.length > 0) {
       connection.waypoints = parsedWaypoints;

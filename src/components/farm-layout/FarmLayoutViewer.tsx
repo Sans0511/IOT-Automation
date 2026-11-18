@@ -11,10 +11,13 @@ import {
 import {
   DEVICE_TYPE_LABELS,
   FARM_BACKGROUND_LABELS,
+  FARM_BACKGROUND_PORT_SIDES,
+  getFarmBackgroundPortPoint,
   getFarmDevicePortPoint,
   getFarmDevicePortRole,
   getFarmDevicePorts,
   type FarmBackgroundItemType,
+  type FarmBackgroundPortSide,
   type FarmDevicePort,
   type FarmLayoutConnection,
   type FarmLayoutData,
@@ -203,6 +206,18 @@ function endpointFor(
   return { point: getFarmDevicePortPoint(placement, port), offset: 0 };
 }
 
+function endpointForBackground(
+  item: FarmLayoutData["backgroundItems"][number],
+  port?: FarmBackgroundPortSide,
+  centerOffset = 32,
+): ResolvedEndpoint {
+  if (!port) {
+    return { point: { x: item.x, y: item.y }, offset: centerOffset };
+  }
+
+  return { point: getFarmBackgroundPortPoint(item, port), offset: 0 };
+}
+
 function snapFreeEndpoint(
   point: FarmPoint,
   placementsById: Map<string, FarmLayoutPlacement>,
@@ -220,7 +235,10 @@ function snapFreeEndpoint(
   }
 
   for (const item of itemsById.values()) {
-    candidates.push({ point: { x: item.x, y: item.y }, offset: centerOffset });
+    candidates.push(endpointForBackground(item, undefined, centerOffset));
+    for (const side of FARM_BACKGROUND_PORT_SIDES) {
+      candidates.push(endpointForBackground(item, side));
+    }
   }
 
   let best: ResolvedEndpoint | null = null;
@@ -265,7 +283,9 @@ function resolveEndpoint(
 
     if (connection.fromBackgroundItemId) {
       const item = itemsById.get(connection.fromBackgroundItemId);
-      return item ? { point: { x: item.x, y: item.y }, offset: 32 } : null;
+      return item
+        ? endpointForBackground(item, connection.fromBackgroundPort, 32)
+        : null;
     }
 
     if (connection.fromPoint) {
@@ -299,7 +319,9 @@ function resolveEndpoint(
 
   if (connection.toBackgroundItemId) {
     const item = itemsById.get(connection.toBackgroundItemId);
-    return item ? { point: { x: item.x, y: item.y }, offset: 36 } : null;
+    return item
+      ? endpointForBackground(item, connection.toBackgroundPort, 36)
+      : null;
   }
 
   if (connection.toPoint) {
@@ -636,6 +658,25 @@ export default function FarmLayoutViewer({
           </div>
         );
       })}
+
+      {layout.backgroundItems.flatMap((item) =>
+        FARM_BACKGROUND_PORT_SIDES.map((side) => {
+          const point = getFarmBackgroundPortPoint(item, side);
+
+          return (
+            <div
+              key={`${item.id}-${side}`}
+              className="absolute -translate-x-1/2 -translate-y-1/2"
+              style={{
+                left: `${(point.x / layout.width) * 100}%`,
+                top: `${(point.y / layout.height) * 100}%`,
+              }}
+            >
+              <span className="block h-2.5 w-2.5 rounded-full border-2 border-emerald-600 bg-white shadow-sm" />
+            </div>
+          );
+        }),
+      )}
 
       {layout.placements.map((placement) => {
         const device = devicesById.get(placement.deviceId);

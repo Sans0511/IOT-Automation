@@ -13,9 +13,12 @@ import type Konva from "konva";
 import { useCanvasImage } from "./useCanvasImage";
 import {
   FARM_BACKGROUND_LABELS,
+  FARM_BACKGROUND_PORT_SIDES,
   FARM_CANVAS_HEIGHT,
   FARM_CANVAS_WIDTH,
   FARM_LAYOUT_GRID,
+  getFarmBackgroundPortLocalPoint,
+  type FarmBackgroundPortSide,
   type FarmLayoutBackgroundItem,
   type FarmPoint,
 } from "@/lib/farm-layout";
@@ -35,17 +38,23 @@ function snap(value: number, enabled: boolean): number {
 export default function BackgroundItemNode({
   item,
   selected,
+  highlighted,
+  linkSourcePort,
   draggable,
   snapToGrid,
   onSelect,
+  onPortDragStart,
   onAlignDrag,
   onMove,
 }: {
   item: FarmLayoutBackgroundItem;
   selected: boolean;
+  highlighted: boolean;
+  linkSourcePort: FarmBackgroundPortSide | null;
   draggable: boolean;
   snapToGrid: boolean;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, port?: FarmBackgroundPortSide) => void;
+  onPortDragStart: () => void;
   onAlignDrag: (id: string, x: number, y: number) => FarmPoint;
   onMove: (id: string, x: number, y: number) => void;
 }) {
@@ -296,6 +305,35 @@ export default function BackgroundItemNode({
           <Circle x={14} y={11} radius={7} fill="#f97316" />
         </>
       ) : null}
+
+      {FARM_BACKGROUND_PORT_SIDES.map((side) => {
+        const local = getFarmBackgroundPortLocalPoint(side);
+        const active = highlighted && linkSourcePort === side;
+
+        return (
+          <Circle
+            key={side}
+            name="flow-background-port"
+            id={`${item.id}:${side}`}
+            x={local.x}
+            y={local.y}
+            radius={active ? 8 : 5}
+            fill="#ffffff"
+            stroke={active ? "#2563eb" : "#16a34a"}
+            strokeWidth={2}
+            onMouseDown={(event) => {
+              event.cancelBubble = true;
+              onPortDragStart();
+              onSelect(item.id, side);
+            }}
+            onTap={(event) => {
+              event.cancelBubble = true;
+              onPortDragStart();
+              onSelect(item.id, side);
+            }}
+          />
+        );
+      })}
 
       <Text
         x={-60}
