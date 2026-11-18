@@ -32,6 +32,7 @@ export function deviceChannel(envelope: DeviceMessageEnvelope): string {
 }
 
 export const DEVICE_STATUS_FRESH_MS = 60_000;
+export const COMMAND_STATUS_FRESH_MS = 10 * 60 * 1000;
 
 export type DeviceRuntimeState =
   | "RUNNING"
@@ -97,8 +98,13 @@ export function getDeviceRuntimeStatus(
   }
 
   const receivedAt = Date.parse(envelope.receivedAt);
+  const fromCommand = envelope.payload.source === "command";
 
-  if (!Number.isNaN(receivedAt) && now - receivedAt > DEVICE_STATUS_FRESH_MS) {
+  const freshnessWindow = fromCommand
+    ? COMMAND_STATUS_FRESH_MS
+    : DEVICE_STATUS_FRESH_MS;
+
+  if (!Number.isNaN(receivedAt) && now - receivedAt > freshnessWindow) {
     return { state: "STALE", active: false, stale: true, online: false };
   }
 

@@ -64,6 +64,7 @@ type FarmCanvasProps = {
   onSelectConnection: (connectionId: string | null) => void;
   onCanvasFlowPoint: (point: FarmPoint) => void;
   onCancelFlow: () => void;
+  onSelectFlowConnection: (connectionId: string, point: FarmPoint) => void;
   onMoveWaypoint: (
     connectionId: string,
     index: number,
@@ -395,6 +396,7 @@ export default function FarmCanvas({
   onSelectConnection,
   onCanvasFlowPoint,
   onCancelFlow,
+  onSelectFlowConnection,
   onMoveWaypoint,
   onMoveFlowEndpoint,
   onAddDevice,
@@ -716,6 +718,7 @@ export default function FarmCanvas({
     const start = dragStartPointRef.current;
     const port = event.target.findAncestor(".flow-port", true);
     const backgroundPort = event.target.findAncestor(".flow-background-port", true);
+    const line = event.target.findAncestor(".flow-line", true);
 
     dragStartPointRef.current = null;
 
@@ -751,6 +754,11 @@ export default function FarmCanvas({
     }
 
     if (selectNearbyPort(point)) {
+      return;
+    }
+
+    if (line?.id()) {
+      onSelectFlowConnection(line.id(), point);
       return;
     }
 
@@ -985,6 +993,12 @@ export default function FarmCanvas({
                 toOffset={target.offset}
                 selected={selectedConnectionId === connection.id}
                 onSelect={() => onSelectConnection(connection.id)}
+                onSelectAt={
+                  linkMode
+                    ? (pointer) =>
+                        onSelectFlowConnection(connection.id, toContent(pointer))
+                    : undefined
+                }
               />
             );
           })}

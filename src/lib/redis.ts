@@ -1,6 +1,7 @@
 import { createClient, type RedisClientType } from "redis";
 import {
   deviceChannel,
+  deviceMessageKey,
   statusChannel,
   type DeviceMessageEnvelope,
 } from "./telemetry";
@@ -75,6 +76,18 @@ export async function getRedis(): Promise<Client> {
   });
 
   return state.connection;
+}
+
+export async function cacheDeviceStatus(
+  envelope: DeviceMessageEnvelope,
+  ttlSeconds = 24 * 60 * 60,
+): Promise<void> {
+  const redis = await getRedis();
+  await redis.set(
+    deviceMessageKey(envelope.farmId, envelope.deviceId, "status"),
+    JSON.stringify(envelope),
+    { EX: ttlSeconds },
+  );
 }
 
 /** Publishes a device message to the per-device real-time channel. */

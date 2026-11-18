@@ -12,6 +12,8 @@ import {
 } from "@/lib/api-helpers";
 import { sendDeviceCommand } from "@/lib/mqttClient";
 import { prisma } from "@/lib/prisma";
+import { cacheDeviceStatus, publishDeviceStatus } from "@/lib/redis";
+import { COMMAND_STATUS_FRESH_MS } from "@/lib/telemetry";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -65,6 +67,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     await sendDeviceCommand(device.farm.id, device.id, { state: command });
+
+    const isValve = device.type === "SOLENOID_VALVE" || device.type === "VALVE";
+    const statusEnvelope = {
+      farmId: device.farm.id,
+      deviceId: device.id,
+      kind: "status" as const,
+      payload: {
+        state: "ONLINE",
+        source: "command",
+        [isValve ? "valveOpen" : "pumpOn"]: command === "ON",
+      },
+      topic: `farm/${device.farm.id}/device/${device.id}/status`,
+      receivedAt: new Date().toISOString(),
+    };
+
+    await cacheDeviceStatus(
+      statusEnvelope,
+      Math.ceil(COMMAND_STATUS_FRESH_MS / 1000),
+    );
+    await publishDeviceStatus(statusEnvelope);
 
     return NextResponse.json({
       deviceId: device.id,

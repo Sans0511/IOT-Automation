@@ -865,13 +865,13 @@ export function parseFarmConnections(
       hasId(fromDeviceId) ? "device" : null,
       hasId(fromBackgroundItemId) ? "background" : null,
       hasId(fromConnectionId) ? "connection" : null,
-      fromPoint !== undefined ? "point" : null,
+      fromPoint !== undefined && !hasId(fromConnectionId) ? "point" : null,
     ].filter(Boolean);
     const targetKinds = [
       hasId(toDeviceId) ? "device" : null,
       hasId(toBackgroundItemId) ? "background" : null,
       hasId(toConnectionId) ? "connection" : null,
-      toPoint !== undefined ? "point" : null,
+      toPoint !== undefined && !hasId(toConnectionId) ? "point" : null,
     ].filter(Boolean);
 
     if (sourceKinds.length !== 1 || targetKinds.length !== 1) {

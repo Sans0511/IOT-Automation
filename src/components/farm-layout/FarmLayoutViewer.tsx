@@ -93,10 +93,10 @@ const FLOW_STYLES: Record<
     animate: false,
   },
   unknown: {
-    glow: "#0284c7",
-    line: "#0284c7",
+    glow: "#94a3b8",
+    line: "#94a3b8",
     dash: "#ffffff",
-    opacity: 0.1,
+    opacity: 0.08,
     animate: false,
   },
 };
@@ -193,6 +193,47 @@ function toPolyline(points: number[]): string {
   }
 
   return result.join(" ");
+}
+
+function pointToSegmentDistance(
+  point: FarmPoint,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lengthSquared = dx * dx + dy * dy;
+
+  if (lengthSquared === 0) {
+    return Math.hypot(point.x - x1, point.y - y1);
+  }
+
+  const t = Math.max(
+    0,
+    Math.min(1, ((point.x - x1) * dx + (point.y - y1) * dy) / lengthSquared),
+  );
+
+  return Math.hypot(point.x - (x1 + t * dx), point.y - (y1 + t * dy));
+}
+
+function pointTouchesPath(point: FarmPoint, points: number[], tolerance = 8): boolean {
+  for (let index = 2; index < points.length; index += 2) {
+    const distance = pointToSegmentDistance(
+      point,
+      points[index - 2],
+      points[index - 1],
+      points[index],
+      points[index + 1],
+    );
+
+    if (distance <= tolerance) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function endpointFor(
@@ -360,76 +401,45 @@ function isPumpType(type: string): boolean {
   return type === "PUMP" || type === "MOTOR_PUMP";
 }
 
-function getUpstreamPumpState(
+function isValveType(type: string): boolean {
+  return type === "SOLENOID_VALVE" || type === "VALVE";
+}
+
+function getValveGateState(
   connection: FarmLayoutConnection,
-  connectionsById: Map<string, FarmLayoutConnection>,
   devicesById: Map<string, FarmLayoutDevice>,
   runtimeByDevice: Map<string, DeviceRuntimeStatus>,
   statuses: StatusMap,
-  visited: Set<string>,
-): FlowState {
-  if (visited.has(connection.id)) {
+): FlowState | null {
+  if (!connection.fromDeviceId) {
+    return null;
+  }
+
+  const type = devicesById.get(connection.fromDeviceId)?.type ?? "";
+
+  if (!isValveType(type)) {
+    return null;
+  }
+
+  if (!statuses[connection.fromDeviceId]) {
     return "unknown";
   }
 
-  visited.add(connection.id);
-  const parents: FarmLayoutConnection[] = [];
-
-  if (connection.fromConnectionId) {
-    const parent = connectionsById.get(connection.fromConnectionId);
-
-    if (parent) {
-      parents.push(parent);
-    }
-  }
-
-  if (connection.fromDeviceId) {
-    for (const candidate of connectionsById.values()) {
-      if (
-        candidate.id !== connection.id &&
-        candidate.toDeviceId === connection.fromDeviceId
-      ) {
-        parents.push(candidate);
-      }
-    }
-  }
-
-  let sawInactivePump = false;
-
-  for (const parent of parents) {
-    const state = getConnectionPumpState(
-      parent,
-      connectionsById,
-      devicesById,
-      runtimeByDevice,
-      statuses,
-      visited,
-    );
-
-    if (state === "active") {
-      return "active";
-    }
-
-    if (state === "inactive") {
-      sawInactivePump = true;
-    }
-  }
-
-  return sawInactivePump ? "inactive" : "unknown";
+  return runtimeByDevice.get(connection.fromDeviceId)?.active === true
+    ? null
+    : "inactive";
 }
 
-function getConnectionPumpState(
+function getDirectPumpState(
   connection: FarmLayoutConnection,
-  connectionsById: Map<string, FarmLayoutConnection>,
   devicesById: Map<string, FarmLayoutDevice>,
   runtimeByDevice: Map<string, DeviceRuntimeStatus>,
   statuses: StatusMap,
-  visited: Set<string> = new Set(),
-): FlowState {
+): FlowState | null {
   const pumpIds: string[] = [];
 
   for (const deviceId of [connection.fromDeviceId, connection.toDeviceId]) {
-    if (!deviceId) {
+    if (!deviceId || pumpIds.includes(deviceId)) {
       continue;
     }
 
@@ -440,42 +450,206 @@ function getConnectionPumpState(
     }
   }
 
-  if (pumpIds.length > 0) {
-    if (pumpIds.some((deviceId) => !statuses[deviceId])) {
-      return "unknown";
-    }
-
-    return pumpIds.some(
-      (deviceId) => runtimeByDevice.get(deviceId)?.active === true,
-    )
-      ? "active"
-      : "inactive";
+  if (pumpIds.length === 0) {
+    return null;
   }
 
-  return getUpstreamPumpState(
-    connection,
-    connectionsById,
-    devicesById,
-    runtimeByDevice,
-    statuses,
-    visited,
-  );
+  if (pumpIds.some((deviceId) => !statuses[deviceId])) {
+    return "unknown";
+  }
+
+  return pumpIds.some((deviceId) => runtimeByDevice.get(deviceId)?.active === true)
+    ? "active"
+    : "inactive";
 }
 
-function getFlowState(
-  connection: FarmLayoutConnection,
+function resolveFlowStates(
+  connections: FarmLayoutConnection[],
   devicesById: Map<string, FarmLayoutDevice>,
   runtimeByDevice: Map<string, DeviceRuntimeStatus>,
   statuses: StatusMap,
-  connectionsById: Map<string, FarmLayoutConnection>,
-): FlowState {
-  return getConnectionPumpState(
-    connection,
-    connectionsById,
-    devicesById,
-    runtimeByDevice,
-    statuses,
+  placementsById: Map<string, FarmLayoutPlacement>,
+  itemsById: Map<string, FarmLayoutData["backgroundItems"][number]>,
+): Map<string, FlowState> {
+  const connectionsById = new Map(
+    connections.map((connection) => [connection.id, connection]),
   );
+  const resolved = new Map<string, FlowState>();
+  const visiting = new Set<string>();
+  const geometryById = new Map<
+    string,
+    { from: FarmPoint; to: FarmPoint; points: number[] }
+  >();
+
+  for (const connection of connections) {
+    const from = resolveEndpoint(connection, "from", placementsById, itemsById);
+    const to = resolveEndpoint(connection, "to", placementsById, itemsById);
+
+    if (!from || !to) {
+      continue;
+    }
+
+    geometryById.set(connection.id, {
+      from: from.point,
+      to: to.point,
+      points: buildFlowPoints(
+        from.point,
+        to.point,
+        connection.waypoints ?? [],
+        from.offset,
+        to.offset,
+      ),
+    });
+  }
+
+  function parentConnections(
+    connection: FarmLayoutConnection,
+  ): FarmLayoutConnection[] {
+    const parents = new Map<string, FarmLayoutConnection>();
+
+    const add = (parent?: FarmLayoutConnection) => {
+      if (parent && parent.id !== connection.id) {
+        parents.set(parent.id, parent);
+      }
+    };
+
+    if (connection.fromConnectionId) {
+      add(connectionsById.get(connection.fromConnectionId));
+    }
+
+    if (connection.toConnectionId) {
+      add(connectionsById.get(connection.toConnectionId));
+    }
+
+    for (const candidate of connections) {
+      if (candidate.toConnectionId === connection.id) {
+        add(candidate);
+      }
+    }
+
+    if (connection.fromDeviceId) {
+      for (const candidate of connections) {
+        if (
+          candidate.id !== connection.id &&
+          candidate.toDeviceId === connection.fromDeviceId
+        ) {
+          add(candidate);
+        }
+      }
+    }
+
+    if (connection.fromBackgroundItemId && connection.fromBackgroundPort) {
+      for (const candidate of connections) {
+        if (candidate.id === connection.id) {
+          continue;
+        }
+
+        const parentAtSamePort =
+          candidate.toBackgroundItemId === connection.fromBackgroundItemId &&
+          candidate.toBackgroundPort === connection.fromBackgroundPort;
+        const siblingAtSamePort =
+          candidate.fromBackgroundItemId === connection.fromBackgroundItemId &&
+          candidate.fromBackgroundPort === connection.fromBackgroundPort;
+
+        if (parentAtSamePort || siblingAtSamePort) {
+          add(candidate);
+        }
+      }
+    }
+
+    const geometry = geometryById.get(connection.id);
+
+    if (geometry) {
+      for (const candidate of connections) {
+        if (candidate.id === connection.id) {
+          continue;
+        }
+
+        const candidateGeometry = geometryById.get(candidate.id);
+
+        if (!candidateGeometry) {
+          continue;
+        }
+
+        if (
+          pointTouchesPath(geometry.from, candidateGeometry.points) ||
+          pointTouchesPath(geometry.to, candidateGeometry.points)
+        ) {
+          add(candidate);
+        }
+      }
+    }
+
+    return Array.from(parents.values());
+  }
+
+  function resolve(connection: FarmLayoutConnection): FlowState {
+    const cached = resolved.get(connection.id);
+
+    if (cached) {
+      return cached;
+    }
+
+    if (visiting.has(connection.id)) {
+      return "unknown";
+    }
+
+    visiting.add(connection.id);
+    let state: FlowState = "unknown";
+
+    try {
+      const valveGate = getValveGateState(
+        connection,
+        devicesById,
+        runtimeByDevice,
+        statuses,
+      );
+
+      const direct =
+        valveGate === null
+          ? getDirectPumpState(
+              connection,
+              devicesById,
+              runtimeByDevice,
+              statuses,
+            )
+          : valveGate;
+
+      if (direct !== null) {
+        state = direct;
+      } else {
+        let sawInactivePump = false;
+
+        for (const parent of parentConnections(connection)) {
+          const parentState = resolve(parent);
+
+          if (parentState === "active") {
+            state = "active";
+            break;
+          }
+
+          if (parentState === "inactive") {
+            sawInactivePump = true;
+          }
+        }
+
+        if (state !== "active" && sawInactivePump) {
+          state = "inactive";
+        }
+      }
+    } finally {
+      visiting.delete(connection.id);
+    }
+
+    resolved.set(connection.id, state);
+    return state;
+  }
+
+  for (const connection of connections) {
+    resolve(connection);
+  }
+
+  return resolved;
 }
 
 export default function FarmLayoutViewer({
@@ -496,10 +670,6 @@ export default function FarmLayoutViewer({
     () => new Map(devices.map((device) => [device.id, device])),
     [devices],
   );
-  const connectionsById = useMemo(
-    () => new Map(layout.connections.map((connection) => [connection.id, connection])),
-    [layout.connections],
-  );
   const runtimeByDevice = useMemo(
     () =>
       new Map(
@@ -509,6 +679,25 @@ export default function FarmLayoutViewer({
         ]),
       ),
     [devices, statuses],
+  );
+  const flowStates = useMemo(
+    () =>
+      resolveFlowStates(
+        layout.connections,
+        devicesById,
+        runtimeByDevice,
+        statuses,
+        placementsById,
+        itemsById,
+      ),
+    [
+      devicesById,
+      itemsById,
+      layout.connections,
+      placementsById,
+      runtimeByDevice,
+      statuses,
+    ],
   );
   const flowVisuals = useMemo(
     () =>
@@ -536,25 +725,11 @@ export default function FarmLayoutViewer({
                 to.offset,
               ),
             ),
-            state: getFlowState(
-              connection,
-              devicesById,
-              runtimeByDevice,
-              statuses,
-              connectionsById,
-            ),
+            state: flowStates.get(connection.id) ?? "unknown",
           };
         })
         .filter((visual): visual is FlowVisual => visual !== null),
-    [
-      connectionsById,
-      devicesById,
-      itemsById,
-      layout.connections,
-      placementsById,
-      runtimeByDevice,
-      statuses,
-    ],
+    [flowStates, itemsById, layout.connections, placementsById],
   );
 
   return (
