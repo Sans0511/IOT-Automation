@@ -834,25 +834,6 @@ export default function FarmLayoutViewer({
         );
       })}
 
-      {layout.backgroundItems.flatMap((item) =>
-        FARM_BACKGROUND_PORT_SIDES.map((side) => {
-          const point = getFarmBackgroundPortPoint(item, side);
-
-          return (
-            <div
-              key={`${item.id}-${side}`}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
-              style={{
-                left: `${(point.x / layout.width) * 100}%`,
-                top: `${(point.y / layout.height) * 100}%`,
-              }}
-            >
-              <span className="block h-2.5 w-2.5 rounded-full border-2 border-emerald-600 bg-white shadow-sm" />
-            </div>
-          );
-        }),
-      )}
-
       {layout.placements.map((placement) => {
         const device = devicesById.get(placement.deviceId);
         const type = device?.type ?? placement.presetKey ?? "DEVICE";

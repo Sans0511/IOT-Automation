@@ -10,6 +10,7 @@ import {
   Text,
 } from "react-konva";
 import type Konva from "konva";
+import { useState } from "react";
 import { useCanvasImage } from "./useCanvasImage";
 import {
   FARM_BACKGROUND_LABELS,
@@ -39,6 +40,7 @@ export default function BackgroundItemNode({
   item,
   selected,
   highlighted,
+  linkMode,
   linkSourcePort,
   draggable,
   snapToGrid,
@@ -50,6 +52,7 @@ export default function BackgroundItemNode({
   item: FarmLayoutBackgroundItem;
   selected: boolean;
   highlighted: boolean;
+  linkMode: boolean;
   linkSourcePort: FarmBackgroundPortSide | null;
   draggable: boolean;
   snapToGrid: boolean;
@@ -58,6 +61,8 @@ export default function BackgroundItemNode({
   onAlignDrag: (id: string, x: number, y: number) => FarmPoint;
   onMove: (id: string, x: number, y: number) => void;
 }) {
+  const [hovered, setHovered] = useState(false);
+  const showPorts = linkMode || selected || highlighted || hovered;
   const treeImage = useCanvasImage(
     item.type === "TREE" ? "/background-items/coconut-tree.png" : null,
   );
@@ -108,6 +113,8 @@ export default function BackgroundItemNode({
         event.cancelBubble = true;
         onSelect(item.id);
       }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
     >
@@ -306,34 +313,36 @@ export default function BackgroundItemNode({
         </>
       ) : null}
 
-      {FARM_BACKGROUND_PORT_SIDES.map((side) => {
-        const local = getFarmBackgroundPortLocalPoint(side);
-        const active = highlighted && linkSourcePort === side;
+      {showPorts
+        ? FARM_BACKGROUND_PORT_SIDES.map((side) => {
+            const local = getFarmBackgroundPortLocalPoint(side);
+            const active = highlighted && linkSourcePort === side;
 
-        return (
-          <Circle
-            key={side}
-            name="flow-background-port"
-            id={`${item.id}:${side}`}
-            x={local.x}
-            y={local.y}
-            radius={active ? 8 : 5}
-            fill="#ffffff"
-            stroke={active ? "#2563eb" : "#16a34a"}
-            strokeWidth={2}
-            onMouseDown={(event) => {
-              event.cancelBubble = true;
-              onPortDragStart();
-              onSelect(item.id, side);
-            }}
-            onTap={(event) => {
-              event.cancelBubble = true;
-              onPortDragStart();
-              onSelect(item.id, side);
-            }}
-          />
-        );
-      })}
+            return (
+              <Circle
+                key={side}
+                name="flow-background-port"
+                id={`${item.id}:${side}`}
+                x={local.x}
+                y={local.y}
+                radius={active ? 8 : 5}
+                fill="#ffffff"
+                stroke={active ? "#2563eb" : "#16a34a"}
+                strokeWidth={2}
+                onMouseDown={(event) => {
+                  event.cancelBubble = true;
+                  onPortDragStart();
+                  onSelect(item.id, side);
+                }}
+                onTap={(event) => {
+                  event.cancelBubble = true;
+                  onPortDragStart();
+                  onSelect(item.id, side);
+                }}
+              />
+            );
+          })
+        : null}
 
       <Text
         x={-60}

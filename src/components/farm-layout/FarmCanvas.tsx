@@ -146,6 +146,7 @@ function DeviceNode({
   placement,
   selected,
   highlighted,
+  linkMode,
   linkSourcePort,
   snapToGrid,
   draggable,
@@ -158,6 +159,7 @@ function DeviceNode({
   placement: FarmLayoutPlacement;
   selected: boolean;
   highlighted: boolean;
+  linkMode: boolean;
   linkSourcePort: FarmDevicePort | null;
   snapToGrid: boolean;
   draggable: boolean;
@@ -167,6 +169,8 @@ function DeviceNode({
   onMove: (deviceId: string, x: number, y: number) => void;
 }) {
   const color = DEVICE_COLORS[device.type] ?? "#64748b";
+  const [hovered, setHovered] = useState(false);
+  const showPorts = linkMode || selected || highlighted || hovered;
   const motorPumpImage = useCanvasImage(
     device.type === "MOTOR_PUMP"
       ? "/background-items/motor-pump-icon.svg"
@@ -204,6 +208,8 @@ function DeviceNode({
         event.cancelBubble = true;
         onSelect(device.id);
       }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       onDragMove={(event) => {
         const aligned = onAlignDrag(
           device.id,
@@ -304,45 +310,47 @@ function DeviceNode({
           <Line points={[-7, -1, 7, -1]} stroke={color} strokeWidth={4} />
         </>
       ) : null}
-        {getFarmDevicePorts(device.type).map((port) => {
-          const local = getFarmDevicePortLocalPoint(port);
-          const label = portLabelOffset(port);
-          const active = highlighted && linkSourcePort === port;
+        {showPorts
+          ? getFarmDevicePorts(device.type).map((port) => {
+              const local = getFarmDevicePortLocalPoint(port);
+              const label = portLabelOffset(port);
+              const active = highlighted && linkSourcePort === port;
 
-          return (
-            <Group key={port} x={local.x} y={local.y}>
-              <Circle
-                name="flow-port"
-                id={`${device.id}:${port}`}
-                radius={active ? 8 : 5}
-                fill="#ffffff"
-                stroke={active ? "#2563eb" : color}
-                strokeWidth={2}
-                onMouseDown={(event) => {
-                  event.cancelBubble = true;
-                  onPortDragStart(device.id, port);
-                  onSelect(device.id, port);
-                }}
-                onTap={(event) => {
-                  event.cancelBubble = true;
-                  onPortDragStart(device.id, port);
-                  onSelect(device.id, port);
-                }}
-              />
-              <Text
-                x={label.x}
-                y={label.y}
-                width={getFarmDevicePortRole(port) === "inlet" ? 20 : 26}
-                text={getFarmDevicePortRole(port) === "inlet" ? "IN" : "OUT"}
-                fontSize={8}
-                fontStyle="bold"
-                align="center"
-                fill={active ? "#1d4ed8" : "#475569"}
-                listening={false}
-              />
-            </Group>
-          );
-        })}
+              return (
+                <Group key={port} x={local.x} y={local.y}>
+                  <Circle
+                    name="flow-port"
+                    id={`${device.id}:${port}`}
+                    radius={active ? 8 : 5}
+                    fill="#ffffff"
+                    stroke={active ? "#2563eb" : color}
+                    strokeWidth={2}
+                    onMouseDown={(event) => {
+                      event.cancelBubble = true;
+                      onPortDragStart(device.id, port);
+                      onSelect(device.id, port);
+                    }}
+                    onTap={(event) => {
+                      event.cancelBubble = true;
+                      onPortDragStart(device.id, port);
+                      onSelect(device.id, port);
+                    }}
+                  />
+                  <Text
+                    x={label.x}
+                    y={label.y}
+                    width={getFarmDevicePortRole(port) === "inlet" ? 20 : 26}
+                    text={getFarmDevicePortRole(port) === "inlet" ? "IN" : "OUT"}
+                    fontSize={8}
+                    fontStyle="bold"
+                    align="center"
+                    fill={active ? "#1d4ed8" : "#475569"}
+                    listening={false}
+                  />
+                </Group>
+              );
+            })
+          : null}
 
         <Rect
           x={-72}
@@ -1067,6 +1075,7 @@ export default function FarmCanvas({
                 linkSource?.kind === "backgroundItem" &&
                 linkSource.backgroundItemId === item.id
               }
+              linkMode={linkMode}
               linkSourcePort={
                 linkSource?.kind === "backgroundItem"
                   ? linkSource.port ?? null
@@ -1097,6 +1106,7 @@ export default function FarmCanvas({
                   linkSource?.kind === "device" &&
                   linkSource.deviceId === placement.deviceId
                 }
+                linkMode={linkMode}
                 linkSourcePort={
                   linkSource?.kind === "device" ? linkSource.port ?? null : null
                 }
