@@ -1,4 +1,11 @@
-import { DeviceType, Prisma } from "@prisma/client";
+import {
+  DeviceType,
+  Prisma,
+  type FarmBackgroundItemRecord,
+  type FarmFlowConnectionRecord,
+  type FarmPlacementRecord,
+  type FarmPointRecord,
+} from "@prisma/client";
 import { NextResponse, type NextRequest } from "next/server";
 import { getAuthenticatedUser } from "@/lib/api-auth";
 import {
@@ -22,10 +29,12 @@ import {
   isFarmDevicePresetKey,
   parseFarmBackgroundItems,
   parseFarmConnections,
+  type FarmLayoutBackgroundItem,
   type FarmLayoutConnection,
   type FarmLayoutData,
   type FarmLayoutDevice,
   type FarmLayoutPlacement,
+  type FarmPoint,
 } from "@/lib/farm-layout";
 import { prisma } from "@/lib/prisma";
 
@@ -33,9 +42,102 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
+type StoredFarmLayout = {
+  id: string;
+  farmId: string;
+  width: number;
+  height: number;
+  backgroundKey: string;
+  placements: FarmPlacementRecord[];
+  backgroundItems: FarmBackgroundItemRecord[];
+  connections: FarmFlowConnectionRecord[];
+  version: number;
+  updatedAt: Date;
+};
+
 class LayoutVersionConflict extends Error {}
 class LayoutFarmNotFoundError extends Error {}
 class LayoutBadRequestError extends Error {}
+
+function toPointRecord(point: FarmPoint): Prisma.FarmPointRecordCreateInput {
+  return { x: point.x, y: point.y };
+}
+
+function toFarmPoint(point: FarmPointRecord): FarmPoint {
+  return { x: point.x, y: point.y };
+}
+
+function toPlacementRecord(
+  placement: FarmLayoutPlacement,
+): Prisma.FarmPlacementRecordCreateInput {
+  return {
+    deviceId: placement.deviceId,
+    x: placement.x,
+    y: placement.y,
+    rotation: placement.rotation,
+    label: placement.label ?? null,
+    presetKey: placement.presetKey ?? null,
+  };
+}
+
+function toBackgroundItemRecord(
+  item: FarmLayoutBackgroundItem,
+): Prisma.FarmBackgroundItemRecordCreateInput {
+  return {
+    id: item.id,
+    type: item.type,
+    x: item.x,
+    y: item.y,
+    rotation: item.rotation,
+    scale: item.scale,
+  };
+}
+
+function toConnectionRecord(
+  connection: FarmLayoutConnection,
+): Prisma.FarmFlowConnectionRecordCreateInput {
+  return {
+    id: connection.id,
+    fromDeviceId: connection.fromDeviceId ?? null,
+    fromBackgroundItemId: connection.fromBackgroundItemId ?? null,
+    fromBackgroundPort: connection.fromBackgroundPort ?? null,
+    fromConnectionId: connection.fromConnectionId ?? null,
+    fromPoint: connection.fromPoint
+      ? toPointRecord(connection.fromPoint)
+      : null,
+    toDeviceId: connection.toDeviceId ?? null,
+    toBackgroundItemId: connection.toBackgroundItemId ?? null,
+    toBackgroundPort: connection.toBackgroundPort ?? null,
+    toConnectionId: connection.toConnectionId ?? null,
+    toPoint: connection.toPoint ? toPointRecord(connection.toPoint) : null,
+    fromPort: connection.fromPort ?? null,
+    toPort: connection.toPort ?? null,
+    waypoints: (connection.waypoints ?? []).map(toPointRecord),
+  };
+}
+
+function connectionRecordToInput(connection: FarmFlowConnectionRecord) {
+  return {
+    id: connection.id,
+    fromDeviceId: connection.fromDeviceId ?? undefined,
+    fromBackgroundItemId: connection.fromBackgroundItemId ?? undefined,
+    fromBackgroundPort: connection.fromBackgroundPort ?? undefined,
+    fromConnectionId: connection.fromConnectionId ?? undefined,
+    fromPoint: connection.fromPoint
+      ? toFarmPoint(connection.fromPoint)
+      : undefined,
+    toDeviceId: connection.toDeviceId ?? undefined,
+    toBackgroundItemId: connection.toBackgroundItemId ?? undefined,
+    toBackgroundPort: connection.toBackgroundPort ?? undefined,
+    toConnectionId: connection.toConnectionId ?? undefined,
+    toPoint: connection.toPoint
+      ? toFarmPoint(connection.toPoint)
+      : undefined,
+    fromPort: connection.fromPort ?? undefined,
+    toPort: connection.toPort ?? undefined,
+    waypoints: connection.waypoints.map(toFarmPoint),
+  };
+}
 
 function validateLayoutForSave({
   farm,
@@ -191,7 +293,9 @@ function parsePlacements(value: unknown): FarmLayoutPlacement[] | null {
   return placements;
 }
 
-function readStoredPlacements(value: Prisma.JsonValue): FarmLayoutPlacement[] {
+function readStoredPlacements(
+  value: FarmPlacementRecord[],
+): FarmLayoutPlacement[] {
   const placements = parsePlacements(value);
   return placements ?? [];
 }
@@ -230,12 +334,13 @@ function hasValidConnectionEndpoint(
 }
 
 function readStoredConnections(
-  value: Prisma.JsonValue | null,
+  value: FarmFlowConnectionRecord[],
   placements: FarmLayoutPlacement[],
   backgroundItemIds: Set<string>,
 ): FarmLayoutConnection[] {
   const placedIds = new Set(placements.map((placement) => placement.deviceId));
-  const connections = parseFarmConnections(value) ?? [];
+  const connections =
+    parseFarmConnections(value.map(connectionRecordToInput)) ?? [];
   const connectionIds = new Set(connections.map((connection) => connection.id));
 
   return connections.filter(
@@ -258,18 +363,7 @@ function readStoredConnections(
 }
 
 function serializeLayout(
-  layout: {
-    id: string;
-    farmId: string;
-    width: number;
-    height: number;
-    backgroundKey: string;
-    placements: Prisma.JsonValue;
-    backgroundItems: Prisma.JsonValue | null;
-    connections: Prisma.JsonValue | null;
-    version: number;
-    updatedAt: Date;
-  },
+  layout: StoredFarmLayout,
   allowedDeviceIds: Set<string>,
 ): FarmLayoutData {
   const placements = readStoredPlacements(layout.placements).filter(
@@ -467,25 +561,32 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           }
         }
 
-        const publishedPlacements = placements.map((placement) => {
-          const deviceId =
-            deviceIdMap.get(placement.deviceId) ?? placement.deviceId;
+        const publishedPlacements: FarmLayoutPlacement[] = placements.map(
+          (placement) => {
+            const deviceId =
+              deviceIdMap.get(placement.deviceId) ?? placement.deviceId;
 
-          if (deviceId === placement.deviceId) {
-            return placement;
-          }
+            if (deviceId === placement.deviceId) {
+              return placement;
+            }
 
-          return {
-            deviceId,
-            x: placement.x,
-            y: placement.y,
-            rotation: placement.rotation,
-            label: placement.label,
-          };
-        });
+            return {
+              deviceId,
+              x: placement.x,
+              y: placement.y,
+              rotation: placement.rotation,
+              label: placement.label,
+            };
+          },
+        );
         const publishedConnections = connections.map((connection) =>
           remapConnectionDeviceIds(connection, deviceIdMap),
         );
+        const placementRecords = publishedPlacements.map(toPlacementRecord);
+        const backgroundItemRecords = backgroundItems.map(
+          toBackgroundItemRecord,
+        );
+        const connectionRecords = publishedConnections.map(toConnectionRecord);
 
         const layout = await tx.farmLayout.upsert({
           where: { farmId: id },
@@ -494,20 +595,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             width: FARM_CANVAS_WIDTH,
             height: FARM_CANVAS_HEIGHT,
             backgroundKey,
-            placements: publishedPlacements as unknown as Prisma.InputJsonValue,
-            backgroundItems:
-              backgroundItems as unknown as Prisma.InputJsonValue,
-            connections: publishedConnections as unknown as Prisma.InputJsonValue,
+            placements: placementRecords,
+            backgroundItems: backgroundItemRecords,
+            connections: connectionRecords,
             version: currentVersion + 1,
           },
           update: {
             width: FARM_CANVAS_WIDTH,
             height: FARM_CANVAS_HEIGHT,
             backgroundKey,
-            placements: publishedPlacements as unknown as Prisma.InputJsonValue,
-            backgroundItems:
-              backgroundItems as unknown as Prisma.InputJsonValue,
-            connections: publishedConnections as unknown as Prisma.InputJsonValue,
+            placements: placementRecords,
+            backgroundItems: backgroundItemRecords,
+            connections: connectionRecords,
             version: { increment: 1 },
           },
           select: {

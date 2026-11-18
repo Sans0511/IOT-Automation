@@ -1,5 +1,6 @@
 import { DeviceType } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { logError } from "./logger";
 
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 
@@ -64,7 +65,10 @@ export function conflictResponse(message: string) {
 }
 
 export function serverErrorResponse(label: string, error: unknown) {
-  console.error(`${label}:`, error);
+  logError("api_server_error", {
+    label,
+    error: error instanceof Error ? error.message : String(error),
+  });
   return NextResponse.json(
     { error: `Unable to complete ${label.toLowerCase()}` },
     { status: 500 },

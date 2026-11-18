@@ -49,18 +49,58 @@ model Device {
   @@index([farmId, type])
 }
 
+type FarmPointRecord {
+  x Int
+  y Int
+}
+
+type FarmPlacementRecord {
+  deviceId  String
+  x         Int
+  y         Int
+  rotation  Int
+  label     String?
+  presetKey String?
+}
+
+type FarmBackgroundItemRecord {
+  id       String
+  type     String
+  x        Int
+  y        Int
+  rotation Int
+  scale    Float
+}
+
+type FarmFlowConnectionRecord {
+  id                   String
+  fromDeviceId         String?
+  fromBackgroundItemId String?
+  fromBackgroundPort   String?
+  fromConnectionId     String?
+  fromPoint            FarmPointRecord?
+  toDeviceId           String?
+  toBackgroundItemId   String?
+  toBackgroundPort     String?
+  toConnectionId       String?
+  toPoint              FarmPointRecord?
+  fromPort             String?
+  toPort               String?
+  waypoints            FarmPointRecord[]
+}
+
 model FarmLayout {
   id     String @id @default(auto()) @map("_id") @db.ObjectId
   farmId String @unique @db.ObjectId
   farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
 
-  width           Int    @default(1200)
-  height          Int    @default(800)
-  backgroundKey   String @default("classic-farm")
-  placements      Json
-  backgroundItems Json?
-  connections     Json?
-  version         Int    @default(0)
+  width           Int                        @default(1200)
+  height          Int                        @default(800)
+  backgroundKey   String                     @default("classic-farm")
+  placements      FarmPlacementRecord[]
+  backgroundItems FarmBackgroundItemRecord[]
+  connections     FarmFlowConnectionRecord[]
+  version         Int                        @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

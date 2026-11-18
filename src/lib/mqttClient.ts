@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { connect, type MqttClient } from "mqtt";
+import { logError } from "./logger";
 
 const COMMAND_TOPIC_SUFFIX = "command";
 const DEFAULT_PUBLISH_TIMEOUT_MS = 10_000;
@@ -82,7 +83,7 @@ function createMqttClient(): MqttClient {
   // The broker emits this for network/auth problems; keep the worker alive so
   // the built-in reconnect loop can recover.
   client.on("error", (error) => {
-    console.error("MQTT publisher error:", error.message);
+    logError("mqtt_publisher_error", { error: error.message });
   });
 
   client.on("close", () => {
@@ -133,6 +134,40 @@ export function getMqttClient(): Promise<MqttClient> {
 
   state.client = client;
   return state.connection;
+}
+
+export function getMqttPublisherHealth(): {
+  healthy: boolean;
+  connected: boolean;
+  error?: string;
+} {
+  const connected = state.client?.connected === true;
+
+  if (connected) {
+    return { healthy: true, connected: true };
+  }
+
+  if (state.connection) {
+    return {
+      healthy: false,
+      connected: false,
+      error: "MQTT publisher connection is pending",
+    };
+  }
+
+  if (state.client) {
+    return {
+      healthy: false,
+      connected: false,
+      error: "MQTT publisher is not connected",
+    };
+  }
+
+  return {
+    healthy: false,
+    connected: false,
+    error: "MQTT publisher is not initialized",
+  };
 }
 
 /** Resolves only after the broker acknowledges the QoS 1 publish. */
@@ -196,10 +231,10 @@ export async function sendDeviceCommand(
     const client = await getMqttClient();
     await publishWithAck(client, topic, message);
   } catch (error) {
-    console.error(
-      `Failed to publish device command to ${topic}:`,
-      error instanceof Error ? error.message : String(error),
-    );
+    logError("mqtt_command_publish_failed", {
+      topic,
+      error: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   }
 }

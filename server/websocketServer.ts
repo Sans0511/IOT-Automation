@@ -1,11 +1,14 @@
 import "dotenv/config";
 
-import { createServer, type IncomingMessage } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { connect, type MqttClient } from "mqtt";
 import { WebSocket, WebSocketServer } from "ws";
 import {
   canAccessOwner,
   getAuthenticatedUserFromCookieHeader,
 } from "../src/lib/api-auth";
+import { logError, logInfo, logWarn } from "../src/lib/logger";
+import { getMqttBrokerUrl } from "../src/lib/mqttClient";
 import { prisma } from "../src/lib/prisma";
 import { getRedis } from "../src/lib/redis";
 import {
@@ -17,6 +20,7 @@ import {
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const DEFAULT_PORT = 3001;
+const MQTT_READY_TIMEOUT_MS = 2_000;
 const TELEMETRY_PATTERN = "telemetry:*";
 const STATUS_PATTERN = "status:*";
 const ALL_DEVICES = "all";
@@ -26,6 +30,12 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ];
 
 type RedisClient = Awaited<ReturnType<typeof getRedis>>;
+
+interface DependencyHealth {
+  name: string;
+  healthy: boolean;
+  error?: string;
+}
 
 type StreamFrame =
   | { type: "ready"; farmId: string; deviceId: string }
@@ -39,6 +49,10 @@ interface StreamClient {
 
 const clients = new Map<WebSocket, StreamClient>();
 let subscriber: RedisClient | null = null;
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function getPort(): number {
   const raw = process.env.WS_PORT;
@@ -167,7 +181,7 @@ async function handleConnection(
       }
     }
 
-    console.log(`WebSocket client connected: ${farmId}/${deviceId}`);
+    logInfo("websocket_client_connected", { farmId, deviceId });
 
     const redis = await getRedis();
 
@@ -226,21 +240,88 @@ async function handleConnection(
     }, HEARTBEAT_INTERVAL_MS);
 
     socket.on("close", () => {
-      console.log(`WebSocket client disconnected: ${farmId}/${deviceId}`);
+      logInfo("websocket_client_disconnected", { farmId, deviceId });
       cleanup();
     });
 
     socket.on("error", (error) => {
-      console.error("WebSocket client error:", error.message);
+      logError("websocket_client_error", { error: error.message });
       cleanup();
     });
   } catch (error) {
-    console.error(
-      "WebSocket connection failed:",
-      error instanceof Error ? error.message : String(error),
-    );
+    logError("websocket_connection_failed", { error: errorMessage(error) });
     await fail(1011, "Unable to start device stream");
   }
+}
+
+async function checkDependency(
+  name: string,
+  check: () => Promise<unknown>,
+): Promise<DependencyHealth> {
+  try {
+    await check();
+    return { name, healthy: true };
+  } catch (error) {
+    return { name, healthy: false, error: errorMessage(error) };
+  }
+}
+
+async function checkMqttDependency(): Promise<DependencyHealth> {
+  try {
+    const url = getMqttBrokerUrl();
+    const healthy = await new Promise<boolean>((resolve) => {
+      const client: MqttClient = connect(url, {
+        reconnectPeriod: 0,
+        connectTimeout: MQTT_READY_TIMEOUT_MS,
+        clientId: `iot-automation-health-${process.pid}-${Date.now()}`,
+      });
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const finish = (result: boolean) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+
+        if (timer) {
+          clearTimeout(timer);
+        }
+
+        try {
+          client.end(true);
+        } finally {
+          resolve(result);
+        }
+      };
+
+      timer = setTimeout(() => finish(false), MQTT_READY_TIMEOUT_MS);
+      client.once("connect", () => finish(true));
+      client.once("error", () => finish(false));
+    });
+
+    return { name: "mqtt", healthy };
+  } catch (error) {
+    return { name: "mqtt", healthy: false, error: errorMessage(error) };
+  }
+}
+
+async function handleReady(response: ServerResponse): Promise<void> {
+  const dependencies = await Promise.all([
+    checkDependency("mongodb", () => prisma.$runCommandRaw({ ping: 1 })),
+    checkDependency("redis", async () => {
+      const redis = await getRedis();
+      await redis.ping();
+    }),
+    checkMqttDependency(),
+  ]);
+  const healthy = dependencies.every((dependency) => dependency.healthy);
+
+  response.writeHead(healthy ? 200 : 503, {
+    "Content-Type": "application/json",
+  });
+  response.end(JSON.stringify({ healthy, dependencies }));
 }
 
 const port = getPort();
@@ -248,6 +329,11 @@ const server = createServer((request, response) => {
   if (request.url === "/health") {
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ status: "ok" }));
+    return;
+  }
+
+  if (request.url === "/health/ready") {
+    void handleReady(response);
     return;
   }
 
@@ -260,7 +346,9 @@ const wss = new WebSocketServer({
   path: "/ws",
   verifyClient: (info, done) => {
     if (!isAllowedOrigin(info.req)) {
-      console.warn(`Blocked WebSocket origin: ${info.req.headers.origin}`);
+      logWarn("websocket_origin_blocked", {
+        origin: String(info.req.headers.origin ?? "undefined"),
+      });
       done(false, 403, "Forbidden origin");
       return;
     }
@@ -307,9 +395,12 @@ async function start() {
     }
 
     if (recipients > 0) {
-      console.log(
-        `${envelope.kind} fanout ${envelope.farmId}/${envelope.deviceId} -> ${recipients}`,
-      );
+      logInfo("websocket_fanout", {
+        kind: envelope.kind,
+        farmId: envelope.farmId,
+        deviceId: envelope.deviceId,
+        recipients,
+      });
     }
   };
 
@@ -317,13 +408,13 @@ async function start() {
   await subscriber.pSubscribe(STATUS_PATTERN, handleMessage);
 
   server.listen(port, () => {
-    console.log(`WebSocket server listening on ws://localhost:${port}/ws`);
+    logInfo("websocket_server_listening", { port });
   });
 }
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
-    console.log("WebSocket server shutting down...");
+    logInfo("websocket_server_shutting_down");
     clients.forEach((_client, socket) => socket.close());
     wss.close(() => {
       server.close(() => {
@@ -336,9 +427,6 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 void start().catch((error) => {
-  console.error(
-    "WebSocket server failed to start:",
-    error instanceof Error ? error.message : String(error),
-  );
+  logError("websocket_server_start_failed", { error: errorMessage(error) });
   process.exit(1);
 });

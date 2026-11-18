@@ -7,6 +7,7 @@ import {
   signAccessToken,
   signRefreshToken,
 } from "@/lib/jwt";
+import { logError } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { hashRefreshToken, storeRefreshSession } from "@/lib/redis";
 
@@ -101,7 +102,9 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("Login failed:", error);
+    logError("login_failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json(
       { error: "Unable to complete login" },
       { status: 500 },

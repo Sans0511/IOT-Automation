@@ -7,6 +7,7 @@ import {
   STALE_CHECK_INTERVAL_MS,
   TELEMETRY_STALE_MS,
 } from "../src/lib/freshness";
+import { logError, logInfo, logWarn } from "../src/lib/logger";
 import { getMqttBrokerUrl } from "../src/lib/mqttClient";
 import { getRedis, publishDeviceStatus, publishTelemetry } from "../src/lib/redis";
 import {
@@ -20,8 +21,12 @@ const TELEMETRY_TOPIC = "farm/+/device/+/telemetry";
 const TOPIC_PATTERN = /^farm\/([^/]+)\/device\/([^/]+)\/(status|telemetry)$/;
 const RECONNECT_DELAY_MS = 2_000;
 const CONNECT_TIMEOUT_MS = 10_000;
+const TELEMETRY_LAST_SEEN_PREFIX = "telemetry:last-seen:";
+const TELEMETRY_LAST_SEEN_PATTERN = /^telemetry:last-seen:([^:]+):([^:]+)$/;
+const TELEMETRY_LAST_SEEN_TTL_SECONDS = DEFAULT_CACHE_TTL_SECONDS;
 
 type MessageKind = "status" | "telemetry";
+type RedisClient = Awaited<ReturnType<typeof getRedis>>;
 
 interface DeviceTopic {
   farmId: string;
@@ -29,16 +34,9 @@ interface DeviceTopic {
   kind: MessageKind;
 }
 
-interface TelemetryState {
-  farmId: string;
-  deviceId: string;
-  lastSeenAt: number;
-  stale: boolean;
-}
-
-let redisClient: Awaited<ReturnType<typeof getRedis>> | null = null;
+let redisClient: RedisClient | null = null;
 let queue: Promise<void> = Promise.resolve();
-const telemetryStateByDevice = new Map<string, TelemetryState>();
+let staleScanQueued = false;
 
 /** Reads the Redis TTL once at startup and rejects invalid configuration. */
 function getCacheTtlSeconds(): number {
@@ -85,6 +83,44 @@ function parseJsonObject(message: Buffer): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function getWorkerRedis(): Promise<RedisClient> {
+  if (!redisClient) {
+    redisClient = await getRedis();
+  }
+
+  return redisClient;
+}
+
+function telemetryLastSeenKey(farmId: string, deviceId: string): string {
+  return `${TELEMETRY_LAST_SEEN_PREFIX}${farmId}:${deviceId}`;
+}
+
+function parseTelemetryLastSeenKey(
+  key: string,
+): { farmId: string; deviceId: string } | null {
+  const match = TELEMETRY_LAST_SEEN_PATTERN.exec(key);
+
+  if (!match) {
+    return null;
+  }
+
+  const [, farmId, deviceId] = match;
+  return { farmId, deviceId };
+}
+
+function isStaleTimestamp(lastSeen: string | null, now: number): boolean {
+  if (lastSeen === null) {
+    return false;
+  }
+
+  const timestamp = Number(lastSeen);
+  return Number.isFinite(timestamp) && now - timestamp >= TELEMETRY_STALE_MS;
+}
+
 function createDeviceMessageEnvelope(
   deviceTopic: DeviceTopic,
   payload: Record<string, unknown>,
@@ -105,23 +141,16 @@ async function cacheStatusMessage(
   envelope: DeviceMessageEnvelope,
   ttlSeconds: number,
 ): Promise<string> {
-  if (!redisClient) {
-    redisClient = await getRedis();
-  }
-
+  const redis = await getWorkerRedis();
   const key = deviceMessageKey(
     deviceTopic.farmId,
     deviceTopic.deviceId,
     "status",
   );
 
-  await redisClient.set(key, JSON.stringify(envelope), { EX: ttlSeconds });
+  await redis.set(key, JSON.stringify(envelope), { EX: ttlSeconds });
 
   return key;
-}
-
-function deviceStateKey(farmId: string, deviceId: string): string {
-  return `${farmId}:${deviceId}`;
 }
 
 async function setSensorStatus(
@@ -138,38 +167,65 @@ async function setSensorStatus(
   );
   const key = await cacheStatusMessage(deviceTopic, envelope, cacheTtlSeconds);
 
-  console.log(`Cached sensor ${state} status -> ${key}`);
+  logInfo("mqtt_cached_sensor_status", { state, key });
   await publishDeviceStatus(envelope);
 }
 
 /** Serializes Redis writes so a slower write cannot overwrite newer data. */
-function enqueue(task: () => Promise<void>): void {
+function enqueue(
+  task: () => Promise<void>,
+  event = "mqtt_message_handling_failed",
+): void {
   queue = queue.then(task).catch((error: unknown) => {
-    console.error(
-      "MQTT message handling failed:",
-      error instanceof Error ? error.message : String(error),
-    );
+    logError(event, { error: errorMessage(error) });
   });
 }
 
 function markStaleSensors(cacheTtlSeconds: number): void {
-  const now = Date.now();
-
-  for (const state of telemetryStateByDevice.values()) {
-    if (state.stale || now - state.lastSeenAt < TELEMETRY_STALE_MS) {
-      continue;
-    }
-
-    state.stale = true;
-    enqueue(async () => {
-      await setSensorStatus(
-        state.farmId,
-        state.deviceId,
-        "STALE",
-        cacheTtlSeconds,
-      );
-    });
+  if (staleScanQueued) {
+    return;
   }
+
+  staleScanQueued = true;
+
+  enqueue(async () => {
+    try {
+      const redis = await getWorkerRedis();
+      const now = Date.now();
+
+      for await (const keys of redis.scanIterator({
+        MATCH: `${TELEMETRY_LAST_SEEN_PREFIX}*`,
+        COUNT: 100,
+      })) {
+        for (const key of keys) {
+          const target = parseTelemetryLastSeenKey(key);
+
+          if (!target) {
+            continue;
+          }
+
+          const lastSeen = await redis.get(key);
+
+          if (!isStaleTimestamp(lastSeen, now)) {
+            continue;
+          }
+
+          try {
+            await setSensorStatus(
+              target.farmId,
+              target.deviceId,
+              "STALE",
+              cacheTtlSeconds,
+            );
+          } finally {
+            await redis.del(key);
+          }
+        }
+      }
+    } finally {
+      staleScanQueued = false;
+    }
+  }, "mqtt_stale_scan_failed");
 }
 
 /**
@@ -195,15 +251,18 @@ export async function startMqttWorker(): Promise<MqttClient> {
   staleTimer.unref();
 
   client.on("connect", () => {
-    console.log("MQTT worker connected");
+    logInfo("mqtt_worker_connected");
 
     client.subscribe([STATUS_TOPIC, TELEMETRY_TOPIC], { qos: 1 }, (error) => {
       if (error) {
-        console.error("MQTT subscribe failed:", error.message);
+        logError("mqtt_subscribe_failed", { error: error.message });
         return;
       }
 
-      console.log(`MQTT subscribed: ${STATUS_TOPIC}, ${TELEMETRY_TOPIC}`);
+      logInfo("mqtt_subscribed", {
+        statusTopic: STATUS_TOPIC,
+        telemetryTopic: TELEMETRY_TOPIC,
+      });
     });
   });
 
@@ -224,20 +283,26 @@ export async function startMqttWorker(): Promise<MqttClient> {
           envelope,
           cacheTtlSeconds,
         );
-        console.log(`Cached status -> ${key}`);
+        logInfo("mqtt_cached_status", { key });
         await publishDeviceStatus(envelope);
       } else {
-        const key = deviceStateKey(deviceTopic.farmId, deviceTopic.deviceId);
-        const previous = telemetryStateByDevice.get(key);
-        telemetryStateByDevice.set(key, {
-          farmId: deviceTopic.farmId,
-          deviceId: deviceTopic.deviceId,
-          lastSeenAt: Date.now(),
-          stale: false,
+        const redis = await getWorkerRedis();
+        const lastSeenKey = telemetryLastSeenKey(
+          deviceTopic.farmId,
+          deviceTopic.deviceId,
+        );
+        const previousLastSeen = await redis.get(lastSeenKey);
+        const now = Date.now();
+
+        await redis.set(lastSeenKey, now, {
+          EX: TELEMETRY_LAST_SEEN_TTL_SECONDS,
         });
         await publishTelemetry(envelope);
 
-        if (!previous || previous.stale) {
+        if (
+          previousLastSeen === null ||
+          isStaleTimestamp(previousLastSeen, now)
+        ) {
           await setSensorStatus(
             deviceTopic.farmId,
             deviceTopic.deviceId,
@@ -247,20 +312,23 @@ export async function startMqttWorker(): Promise<MqttClient> {
         }
       }
 
-      console.log(`Published ${deviceTopic.kind} -> ${deviceChannel(envelope)}`);
+      logInfo("mqtt_published", {
+        kind: deviceTopic.kind,
+        channel: deviceChannel(envelope),
+      });
     });
   });
 
   client.on("reconnect", () => {
-    console.warn("MQTT worker reconnecting...");
+    logWarn("mqtt_worker_reconnecting");
   });
 
   client.on("error", (error) => {
-    console.error("MQTT worker error:", error.message);
+    logError("mqtt_worker_error", { error: error.message });
   });
 
   client.on("offline", () => {
-    console.warn("MQTT worker offline");
+    logWarn("mqtt_worker_offline");
   });
 
   let shuttingDown = false;
@@ -271,7 +339,7 @@ export async function startMqttWorker(): Promise<MqttClient> {
     }
 
     shuttingDown = true;
-    console.log("MQTT worker shutting down...");
+    logInfo("mqtt_worker_shutting_down");
 
     clearInterval(staleTimer);
     await queue;
@@ -296,10 +364,7 @@ export async function startMqttWorker(): Promise<MqttClient> {
 // Auto-start only when executed directly, not when imported for tests.
 if (process.argv[1]?.endsWith("mqttWorker.ts")) {
   startMqttWorker().catch((error: unknown) => {
-    console.error(
-      "MQTT worker failed to start:",
-      error instanceof Error ? error.message : String(error),
-    );
+    logError("mqtt_worker_start_failed", { error: errorMessage(error) });
     process.exitCode = 1;
   });
 }
