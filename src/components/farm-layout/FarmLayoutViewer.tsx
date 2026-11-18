@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { type CSSProperties, useMemo } from "react";
 import { isControllableDeviceType } from "@/lib/device-control";
 import {
   getMoisturePercent,
+  isRainDeviceType,
   resolveDeviceRuntimeStatus,
   type DeviceMessageEnvelope,
   type DeviceRuntimeState,
@@ -44,6 +45,23 @@ type ViewerProps = {
 };
 
 const SNAP_DISTANCE = 40;
+const RAIN_DROP_DENSITY = 0.00024;
+const RAIN_DENSITY_SCALE = 0.8;
+
+function rainNoise(index: number, salt: number): number {
+  const value = Math.sin(index * 12.9898 + salt * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function createRainDrops(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    left: `${rainNoise(index, 1) * 100}%`,
+    delay: `${rainNoise(index, 2) * -2}s`,
+    duration: `${0.7 + rainNoise(index, 3) * 0.8}s`,
+    height: `${24 + rainNoise(index, 4) * 28}px`,
+    opacity: 0.75 + rainNoise(index, 5) * 0.25,
+  }));
+}
 
 const DEVICE_ICONS: Record<string, string> = {
   MOTOR_PUMP: "/background-items/motor-pump-icon.svg",
@@ -97,6 +115,7 @@ const FLOW_STYLES: Record<
 
 const STATUS_STYLES: Record<DeviceRuntimeState, string> = {
   RUNNING: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300",
+  RAINING: "bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300",
   OPEN: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300",
   STOPPED: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
   CLOSED: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
@@ -159,11 +178,11 @@ function MoistureGauge({ value }: { value: number }) {
         y1="36"
         x2={needleX}
         y2={needleY}
-        stroke="#0f172a"
+        stroke="#ffffff"
         strokeWidth="2"
         strokeLinecap="round"
       />
-      <circle cx="36" cy="36" r="3" fill="#0f172a" />
+      <circle cx="36" cy="36" r="3" fill="#ffffff" />
       <text
         x="36"
         y="49"
@@ -820,6 +839,25 @@ export default function FarmLayoutViewer({
       ),
     [devices, statuses, telemetry],
   );
+  const raining = useMemo(
+    () =>
+      devices.some(
+        (device) =>
+          isRainDeviceType(device.type) &&
+          runtimeByDevice.get(device.id)?.state === "RAINING",
+      ),
+    [devices, runtimeByDevice],
+  );
+  const rainDrops = useMemo(() => {
+    const count = Math.round(
+      Math.min(
+        200,
+        Math.max(80, Math.round(layout.width * layout.height * RAIN_DROP_DENSITY)),
+      ) * RAIN_DENSITY_SCALE,
+    );
+
+    return createRainDrops(count);
+  }, [layout.width, layout.height]);
   const flowStates = useMemo(
     () =>
       resolveFlowStates(
@@ -900,17 +938,18 @@ export default function FarmLayoutViewer({
 
   return (
     <div
-      className="relative w-full overflow-hidden rounded-xl border-2 border-emerald-500 bg-white"
+      className="relative w-full overflow-hidden rounded-xl border-2 border-emerald-500 bg-black"
       style={{ aspectRatio: `${layout.width} / ${layout.height}` }}
     >
       <div
         className="absolute inset-0"
         style={{
+          backgroundColor: "#000",
           backgroundImage:
-            "linear-gradient(to right, rgba(16,185,129,0.10) 1px, transparent 1px), linear-gradient(to bottom, rgba(16,185,129,0.10) 1px, transparent 1px), url('/background-items/photo-ground-texture-pattern.jpg')",
-          backgroundSize: "40px 40px, 40px 40px, cover",
-          backgroundPosition: "center, center, center",
-          backgroundRepeat: "repeat, repeat, no-repeat",
+            "linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)",
+          backgroundSize: "40px 40px, 40px 40px",
+          backgroundPosition: "center, center",
+          backgroundRepeat: "repeat, repeat",
         }}
       />
 
@@ -1142,6 +1181,29 @@ export default function FarmLayoutViewer({
           </div>
         );
       })}
+
+      {raining ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-30 overflow-hidden"
+          aria-hidden="true"
+        >
+          {rainDrops.map((drop, index) => (
+            <span
+              key={index}
+              className="rain-drop absolute -top-16 w-[1.5px] rounded-full bg-blue-400/95 shadow-[0_0_8px_rgba(59,130,246,0.95)]"
+              style={
+                {
+                  left: drop.left,
+                  height: drop.height,
+                  animationDelay: drop.delay,
+                  animationDuration: drop.duration,
+                  "--rain-opacity": drop.opacity,
+                } as CSSProperties
+              }
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

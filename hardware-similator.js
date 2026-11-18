@@ -9,6 +9,7 @@ async function main() {
   const pumpId = process.env.PUMP_DEVICE_ID ?? "6afcd5ff265f045f0f08ec73";
   const valve1Id = process.env.VALVE_1_DEVICE_ID ?? "6afcd5ff265f045f0f08ec74";
   const valve2Id = process.env.VALVE_2_DEVICE_ID ?? "6afd0ddf265f045f0f08ec77";
+  const rainId = process.env.RAIN_DEVICE_ID ?? "6afd50ef6f5050ec44260c32";
   const intervalMs = Number(process.env.INTERVAL_MS ?? "1000");
   const telemetryTopic = `farm/${farmId}/device/${sensorId}/telemetry`;
   const statusTopic = (deviceId) =>
@@ -102,8 +103,11 @@ async function main() {
     sendStatus(valve1Id, { state: "ONLINE", valveOpen: false }, "valve 1 OFF");
     await delay(10_000);
     sendStatus(pumpId, { state: "ONLINE", pumpOn: false }, "pump OFF");
+    sendStatus(rainId, { state: "RAINING" }, "rain RAINING");
     await delay(2_000);
     sendStatus(valve2Id, { state: "ONLINE", valveOpen: false }, "valve 2 OFF");
+    await delay(13_000);
+    sendStatus(rainId, { state: "STALE" }, "rain STALE");
   }
 
   async function runCycles() {

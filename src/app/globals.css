@@ -1,1 +1,21 @@
 @import "tailwindcss";
+
+@keyframes rain-fall {
+  0% {
+    transform: translate3d(0, -10vh, 0) rotate(14deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: var(--rain-opacity, 0.75);
+  }
+  100% {
+    transform: translate3d(-48px, 110vh, 0) rotate(14deg);
+    opacity: 0;
+  }
+}
+
+.rain-drop {
+  animation-name: rain-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}

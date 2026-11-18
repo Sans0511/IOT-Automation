@@ -36,6 +36,7 @@ export const COMMAND_STATUS_FRESH_MS = 10 * 60 * 1000;
 
 export type DeviceRuntimeState =
   | "RUNNING"
+  | "RAINING"
   | "STOPPED"
   | "OPEN"
   | "CLOSED"
@@ -96,6 +97,10 @@ export function isSensorDeviceType(deviceType: string): boolean {
   );
 }
 
+export function isRainDeviceType(deviceType: string): boolean {
+  return deviceType === "RAIN_DETECTION" || deviceType === "RAIN_SENSOR";
+}
+
 export function getDeviceRuntimeStatus(
   envelope: DeviceMessageEnvelope | null | undefined,
   deviceType: string,
@@ -133,6 +138,18 @@ export function getDeviceRuntimeStatus(
 
   if (offline) {
     return { state: "OFFLINE", active: false, stale: false, online: false };
+  }
+
+  if (isRainDeviceType(deviceType)) {
+    const raining = readBoolean(envelope.payload, ["raining", "rain"]);
+
+    if (state === "RAINING" || raining === true) {
+      return { state: "RAINING", active: true, stale: false, online: true };
+    }
+
+    if (state === "STALE" || raining === false) {
+      return { state: "STALE", active: false, stale: true, online: false };
+    }
   }
 
   if (state === "STALE") {
