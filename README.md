@@ -2,7 +2,7 @@
 
 A digital twin for farm automation. See your farm on a live visual layout and turn pumps and valves on or off from the dashboard.
 
-**Built with:** Next.js 16 · React 19 · TypeScript · Tailwind · React-Konva · Prisma + MongoDB · Redis · MQTT · WebSocket (`ws`)
+**Built with:** Next.js 16 · React 19 · TypeScript · Tailwind · React-Konva · Prisma + MongoDB · Redis · MQTT · Server-Sent Events (SSE)
 
 > Keep Prisma pinned to `6.19.3`. Prisma 7 has no MongoDB connector.
 
@@ -10,28 +10,26 @@ A digital twin for farm automation. See your farm on a live visual layout and tu
 
 ## How it works
 
-Four processes run together:
+Three processes run together:
 
 | Process | Command | What it does |
 | --- | --- | --- |
-| Web/API | `npm run dev` | Dashboard, login, APIs, layout editor, sends commands |
+| Web/API/SSE | `npm run dev` | Dashboard, login, APIs, layout editor, sends commands, streams live updates |
 | MQTT worker | `npm run mqtt:worker` | Listens to devices, caches status, flags stale sensors |
-| WebSocket server | `npm run ws:server` | Pushes live updates to the browser, serves health checks |
 | Simulator (optional) | `npm run simulate:moisture` | Fake devices for testing |
 
 ```mermaid
 flowchart LR
-  Browser -->|HTTP| Next[Next.js]
-  Browser <-->|WSS| WS[WebSocket Server]
+  Browser -->|HTTP/SSE| Next[Next.js]
   Next --> Mongo[(MongoDB)]
   Next -->|commands| MQTT[(MQTT Broker)]
   Devices --> MQTT
   MQTT --> Worker[MQTT Worker]
   Worker --> Redis[(Redis)]
-  Redis --> WS
+  Redis --> Next
 ```
 
-All three server processes must share the same MongoDB, Redis, MQTT, and JWT settings.
+All server processes must share the same MongoDB, Redis, MQTT, and JWT settings.
 
 ---
 
@@ -74,11 +72,11 @@ Other states: `OFFLINE`, `STALE`.
 
 **Command:** Double-click a device → confirm → API checks access → publishes MQTT (QoS 1) → UI updates right away → the real device status replaces it.
 
-**Status:** Device → MQTT → worker → Redis → WebSocket → dashboard.
+**Status:** Device → MQTT → worker → Redis → SSE API → dashboard.
 
 **Telemetry:** Same path, but live-only (not cached). The worker marks a sensor `STALE` after 60 seconds of silence (checked every 10s), and sends `ONLINE` when data returns.
 
-**WebSocket client:** Reconnects automatically with backoff from 500ms up to 30s.
+**SSE client:** Reconnects automatically; the browser's `EventSource` handles retries.
 
 ---
 
@@ -87,7 +85,7 @@ Other states: `OFFLINE`, `STALE`.
 - **Login:** Short-lived access token (15 min) and refresh token (7 days), both in HttpOnly cookies. Tokens are never in the response body.
 - **Refresh:** Tokens rotate on every use. Reusing an old one revokes the whole session family.
 - **Roles:** `USER` sees only their own farms. `ADMIN` can manage everything, but can't demote or delete themselves, and at least one admin must remain.
-- **WebSocket:** Checks origin, access token, farm ownership, and device membership.
+- **Realtime stream:** Checks access token and farm ownership before opening the SSE connection.
 - **MQTT in production:** Must use `mqtts://` or `wss://` with a username and password. Set per-device ACLs on the broker.
 
 **Not built in yet (add at platform level):** rate limiting, logout endpoint, CSP/security headers, audit trail.
@@ -132,7 +130,6 @@ JWT_REFRESH_SECRET="different-long-random-value"
 MQTT_BROKER_URL="mqtt://localhost:1883"
 WS_PORT="3001"
 WEBSOCKET_ALLOWED_ORIGINS="http://localhost:3000"
-NEXT_PUBLIC_WS_URL="ws://localhost:3001"
 ```
 
 Generate a secret:
@@ -141,7 +138,7 @@ Generate a secret:
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
-The simulator also needs `FARM_ID`, `DEVICE_ID`, `PUMP_DEVICE_ID`, `VALVE_1_DEVICE_ID`, `VALVE_2_DEVICE_ID`, and `RAIN_DEVICE_ID`. `NEXT_PUBLIC_*` values are public, so never put secrets in them.
+The simulator also needs `FARM_ID`, `DEVICE_ID`, `PUMP_DEVICE_ID`, `VALVE_1_DEVICE_ID`, `VALVE_2_DEVICE_ID`, and `RAIN_DEVICE_ID`.
 
 **Create the first admin:** There is no sign-up page. Hash a password, then insert a user in MongoDB:
 
@@ -158,11 +155,10 @@ node -e "console.log(require('bcryptjs').hashSync('change-me', 12))"
 ```bash
 npm run dev
 npm run mqtt:worker
-npm run ws:server
 npm run simulate:moisture   # optional
 ```
 
-Open `http://localhost:3000`. In production, use `npm run build && npm run start`, and run the worker and WebSocket server separately.
+Open `http://localhost:3000`. In production, use `npm run build && npm run start`, and run the MQTT worker separately. The dashboard streams realtime updates from its own `/api/realtime/stream` route; `npm run ws:server` is optional and not used by the dashboard.
 
 ---
 
@@ -196,10 +192,9 @@ mosquitto_pub -h <host> -p 8883 -u <user> -P <pass> -q 1 \
 | --- | --- |
 | Keeps redirecting to `/login` | Check `JWT_ACCESS_SECRET` and the `access_token` cookie |
 | `/admin` sends you to `/` | The user's role isn't `ADMIN` |
-| Dashboard says "reconnecting" | Check `ws:server`, `NEXT_PUBLIC_WS_URL`, and the origin allowlist |
-| WebSocket `403` | Add the exact origin to `WEBSOCKET_ALLOWED_ORIGINS` |
-| WebSocket `4401` | Sign in again; secrets must match across processes |
-| WebSocket `4403` | Farm or device not found, or not yours |
+| Dashboard says "reconnecting" | Check `/api/realtime/stream`, `REDIS_URL`, and that the MQTT worker is running |
+| SSE stream `401` | Sign in again; secrets must match across processes |
+| SSE stream `404` | Farm not found, or not yours |
 | Gauge empty | Start the worker and simulator; check topic and sensor ID |
 | Commands don't arrive | Check broker URL, ACLs, device ID, and device type |
 | Layout save `409` | Reload the layout, then save again |
@@ -215,7 +210,7 @@ mosquitto_pub -h <host> -p 8883 -u <user> -P <pass> -q 1 \
 - MongoDB with TLS, auth, allowlist, and backups
 - Redis with AUTH/TLS and Pub/Sub
 - MQTT over TLS, anonymous access off, least-privilege ACLs
-- Proxy forwards WebSocket upgrades; exact origins configured
+- Proxy allows long-lived SSE responses without buffering
 - `/health` and `/health/ready` monitored; logs centralized
 - Rate limiting and WAF set up at the edge
 
@@ -228,4 +223,4 @@ mosquitto_pub -h <host> -p 8883 -u <user> -P <pass> -q 1 \
 - Deleting or moving a device doesn't update saved layouts. Reopen and republish.
 - One refresh session per user; a new login replaces the old one.
 - There is no logout route yet.
-- SSE exists but the dashboard uses WebSocket.
+- The dashboard uses SSE on the same origin, so no separate WebSocket host is required.

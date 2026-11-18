@@ -65,157 +65,52 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
       return;
     }
 
-    const initialReconnectDelayMs = 500;
-    const maxReconnectDelayMs = 30_000;
-    const activeFarmId = farmId;
-    let disposed = false;
-    let socket: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let reconnectAttempts = 0;
-    const configuredUrl = process.env.NEXT_PUBLIC_WS_URL;
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const baseUrl = (
-      configuredUrl ?? `${protocol}//${window.location.hostname}:3001`
-    )
-      .trim()
-      .replace(/\/$/, "");
+    const stream = new EventSource(
+      `/api/realtime/stream?farmId=${encodeURIComponent(farmId)}`,
+    );
 
-    function connect() {
-      if (disposed) {
+    stream.onopen = () => {
+      setStatusConnection("connected");
+    };
+
+    stream.onerror = () => {
+      setStatusConnection("reconnecting");
+    };
+
+    const handleEvent = (event: Event) => {
+      if (!(event instanceof MessageEvent)) {
         return;
       }
-
-      let retryScheduled = false;
-      let currentSocket: WebSocket | null = null;
-
-      const scheduleReconnect = () => {
-        if (disposed || retryScheduled) {
-          return;
-        }
-
-        retryScheduled = true;
-        setStatusConnection("reconnecting");
-
-        const delay = Math.min(
-          maxReconnectDelayMs,
-          initialReconnectDelayMs * 2 ** Math.min(reconnectAttempts, 20),
-        );
-        reconnectAttempts = Math.min(reconnectAttempts + 1, 20);
-
-        currentSocket?.close();
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          connect();
-        }, delay);
-      };
 
       try {
-        currentSocket = new WebSocket(
-          `${baseUrl}/ws?farmId=${encodeURIComponent(activeFarmId)}&deviceId=all`,
-        );
+        const envelope = parseDeviceMessageEnvelope(event.data);
+
+        if (!envelope || envelope.farmId !== farmId) {
+          return;
+        }
+
+        const update = (current: StatusMap) => ({
+          ...current,
+          [envelope.deviceId]: envelope,
+        });
+
+        if (envelope.kind === "status") {
+          setStatuses(update);
+        } else {
+          setTelemetry(update);
+        }
       } catch {
-        scheduleReconnect();
         return;
       }
+    };
 
-      const activeSocket = currentSocket;
-      socket = activeSocket;
-
-      activeSocket.onopen = () => {
-        if (disposed || socket !== activeSocket) {
-          return;
-        }
-
-        reconnectAttempts = 0;
-        setStatusConnection("connecting");
-      };
-
-      activeSocket.onerror = () => {
-        if (disposed || socket !== activeSocket) {
-          return;
-        }
-
-        setStatusConnection("reconnecting");
-        scheduleReconnect();
-      };
-
-      activeSocket.onclose = () => {
-        if (disposed || socket !== activeSocket) {
-          return;
-        }
-
-        setStatusConnection("reconnecting");
-        scheduleReconnect();
-      };
-
-      activeSocket.onmessage = (event) => {
-        if (disposed || socket !== activeSocket) {
-          return;
-        }
-
-        try {
-          const frame: unknown = JSON.parse(event.data as string);
-
-          if (typeof frame !== "object" || frame === null) {
-            return;
-          }
-
-          const candidate = frame as { type?: unknown; data?: unknown };
-
-          if (candidate.type === "ready") {
-            reconnectAttempts = 0;
-            setStatusConnection("connected");
-            return;
-          }
-
-          if (
-            (candidate.type !== "status" && candidate.type !== "telemetry") ||
-            typeof candidate.data !== "object" ||
-            candidate.data === null
-          ) {
-            return;
-          }
-
-          const envelope = parseDeviceMessageEnvelope(
-            JSON.stringify(candidate.data),
-          );
-
-          if (
-            !envelope ||
-            envelope.farmId !== farmId ||
-            envelope.kind !== candidate.type
-          ) {
-            return;
-          }
-
-          const update = (current: StatusMap) => ({
-            ...current,
-            [envelope.deviceId]: envelope,
-          });
-
-          if (candidate.type === "status") {
-            setStatuses(update);
-          } else {
-            setTelemetry(update);
-          }
-        } catch {
-          return;
-        }
-      };
-    }
-
-    connect();
+    stream.addEventListener("status", handleEvent);
+    stream.addEventListener("telemetry", handleEvent);
 
     return () => {
-      disposed = true;
-      if (reconnectTimer !== null) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-      if (socket) {
-        socket.close();
-        socket = null;
-      }
+      stream.removeEventListener("status", handleEvent);
+      stream.removeEventListener("telemetry", handleEvent);
+      stream.close();
     };
   }, [farmId]);
 
