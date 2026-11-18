@@ -77,8 +77,10 @@ export type FarmDevicePort =
   | "outlet"
   | "inlet-top"
   | "inlet-left"
+  | "outlet-top"
   | "outlet-right"
-  | "outlet-bottom";
+  | "outlet-bottom"
+  | "outlet-left";
 export type FarmDevicePortValue =
   | FarmDevicePort
   | `${FarmDevicePortRole}-${FarmDevicePortSide}`;
@@ -88,8 +90,10 @@ export const FARM_DEVICE_PORT_LABELS: Record<FarmDevicePort, string> = {
   outlet: "Delivery",
   "inlet-top": "Incoming (top)",
   "inlet-left": "Incoming (left)",
+  "outlet-top": "Delivery (top)",
   "outlet-right": "Delivery (right)",
   "outlet-bottom": "Delivery (bottom)",
+  "outlet-left": "Delivery (left)",
 };
 
 export const FARM_DEVICE_PRESETS = (
@@ -162,20 +166,22 @@ const FARM_DEVICE_PORT_SIDE_VECTORS: Record<FarmDevicePortSide, FarmPoint> = {
   left: { x: -1, y: 0 },
 };
 
-const FARM_DEVICE_PORT_SIDE_ROLES: Record<
-  FarmDevicePortSide,
-  FarmDevicePortRole
-> = {
-  top: "inlet",
-  right: "outlet",
-  bottom: "outlet",
-  left: "inlet",
-};
-
 const FARM_DEVICE_INLET_PORTS: FarmDevicePort[] = ["inlet-top", "inlet-left"];
 const FARM_DEVICE_OUTLET_PORTS: FarmDevicePort[] = [
+  "outlet-top",
   "outlet-right",
   "outlet-bottom",
+  "outlet-left",
+];
+const FARM_DEVICE_VALVE_OUTLET_PORTS: FarmDevicePort[] = [
+  "outlet-right",
+  "outlet-bottom",
+];
+const FARM_DEVICE_PORTS: FarmDevicePort[] = [
+  "inlet",
+  "outlet",
+  ...FARM_DEVICE_INLET_PORTS,
+  ...FARM_DEVICE_OUTLET_PORTS,
 ];
 
 export function parseFarmDevicePort(port: FarmDevicePort): {
@@ -202,7 +208,7 @@ export function getFarmDevicePortSide(
 
 export function getFarmDevicePorts(type: string): FarmDevicePort[] {
   if (type === "SOLENOID_VALVE" || type === "VALVE") {
-    return [...FARM_DEVICE_INLET_PORTS, ...FARM_DEVICE_OUTLET_PORTS];
+    return [...FARM_DEVICE_INLET_PORTS, ...FARM_DEVICE_VALVE_OUTLET_PORTS];
   }
 
   if (
@@ -238,9 +244,11 @@ function deriveFarmDevicePortSide(
   role: FarmDevicePortRole,
   rotation: number,
 ): FarmDevicePortSide {
-  const candidates = FARM_DEVICE_PORT_SIDES.filter(
-    (side) => FARM_DEVICE_PORT_SIDE_ROLES[side] === role,
-  );
+  const candidates = (role === "inlet"
+    ? FARM_DEVICE_INLET_PORTS
+    : FARM_DEVICE_OUTLET_PORTS)
+    .map(getFarmDevicePortSide)
+    .filter((side): side is FarmDevicePortSide => side !== null);
   const radians = (rotation * Math.PI) / 180;
   const direction =
     role === "inlet"
@@ -602,22 +610,8 @@ export function createFarmBackgroundConnection(
 }
 
 export function isFarmDevicePort(value: unknown): value is FarmDevicePort {
-  if (value === "inlet" || value === "outlet") {
-    return true;
-  }
-
-  if (typeof value !== "string") {
-    return false;
-  }
-
-  const [role, side, ...rest] = value.split("-");
-  const parsedSide = side as FarmDevicePortSide;
-
   return (
-    rest.length === 0 &&
-    (role === "inlet" || role === "outlet") &&
-    FARM_DEVICE_PORT_SIDES.includes(parsedSide) &&
-    FARM_DEVICE_PORT_SIDE_ROLES[parsedSide] === role
+    typeof value === "string" && FARM_DEVICE_PORTS.includes(value as FarmDevicePort)
   );
 }
 

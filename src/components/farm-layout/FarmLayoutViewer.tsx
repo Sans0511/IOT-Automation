@@ -14,8 +14,6 @@ import {
   FARM_BACKGROUND_PORT_SIDES,
   getFarmBackgroundPortPoint,
   getFarmDevicePortPoint,
-  getFarmDevicePortRole,
-  getFarmDevicePorts,
   type FarmBackgroundItemType,
   type FarmBackgroundPortSide,
   type FarmDevicePort,
@@ -66,17 +64,6 @@ const BACKGROUND_FALLBACKS: Partial<Record<FarmBackgroundItemType, string>> = {
   POND: "POND",
   SHED: "SHED",
   FLOWER_BED: "FLOWER",
-};
-
-const DEVICE_COLORS: Record<string, string> = {
-  VALVE: "#f97316",
-  MOISTURE_SENSOR: "#0ea5e9",
-  PUMP: "#8b5cf6",
-  WEATHER_STATION: "#14b8a6",
-  MOTOR_PUMP: "#7c3aed",
-  SOLENOID_VALVE: "#ea580c",
-  RAIN_DETECTION: "#0ea5e9",
-  SMART_IRRIGATION_CONTROLLER: "#4f46e5",
 };
 
 const FLOW_STYLES: Record<
@@ -841,8 +828,10 @@ export default function FarmLayoutViewer({
         className="absolute inset-0"
         style={{
           backgroundImage:
-            "linear-gradient(to right, rgba(16,185,129,0.10) 1px, transparent 1px), linear-gradient(to bottom, rgba(16,185,129,0.10) 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
+            "linear-gradient(to right, rgba(16,185,129,0.10) 1px, transparent 1px), linear-gradient(to bottom, rgba(16,185,129,0.10) 1px, transparent 1px), url('/background-items/photo-ground-texture-pattern.jpg')",
+          backgroundSize: "40px 40px, 40px 40px, cover",
+          backgroundPosition: "center, center, center",
+          backgroundRepeat: "repeat, repeat, no-repeat",
         }}
       />
 
@@ -1026,61 +1015,48 @@ export default function FarmLayoutViewer({
               transform: `translate(-50%, -50%) rotate(${placement.rotation}deg)`,
             }}
           >
-            <span className="mb-1 max-w-28 truncate rounded bg-white/90 px-1 text-[10px] font-medium text-slate-700 shadow-sm">
+            <span
+              className={`max-w-28 truncate rounded bg-white/90 px-1 text-[10px] font-medium text-slate-700 shadow-sm ${
+                runtime?.active ? "mb-4" : "mb-1"
+              }`}
+            >
               {label}
             </span>
-            <span
-              className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-[10px] font-bold text-sky-700 shadow-sm ring-1 ring-sky-200"
-              style={
-                icon
-                  ? {
-                      backgroundImage: `url(${icon})`,
-                      backgroundSize: "contain",
-                      backgroundRepeat: "no-repeat",
-                      backgroundPosition: "center",
-                    }
-                  : undefined
-              }
-            >
-              {icon ? null : type.slice(0, 3)}
+            <span className="relative flex h-10 w-10 items-center justify-center">
+              {runtime?.active ? (
+                <>
+                  <span
+                    className="pointer-events-none absolute -inset-[14px] animate-ping rounded-full bg-emerald-400/30"
+                    style={{ animationDuration: "1.5s" }}
+                  />
+                  <span className="pointer-events-none absolute -inset-[14px] rounded-full border-2 border-emerald-400" />
+                </>
+              ) : null}
+              <span
+                className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-[10px] font-bold text-sky-700 shadow-sm ring-1 ring-sky-200"
+                style={
+                  icon
+                    ? {
+                        backgroundImage: `url(${icon})`,
+                        backgroundSize: "contain",
+                        backgroundRepeat: "no-repeat",
+                        backgroundPosition: "center",
+                      }
+                    : undefined
+                }
+              >
+                {icon ? null : type.slice(0, 3)}
+              </span>
             </span>
             <span
-              className={`mt-0.5 rounded px-1.5 py-0.5 text-[9px] font-semibold shadow-sm ${STATUS_STYLES[runtimeState]}`}
+              className={`rounded px-1.5 py-0.5 text-[9px] font-semibold shadow-sm ${
+                runtime?.active ? "mt-4" : "mt-0.5"
+              } ${STATUS_STYLES[runtimeState]}`}
             >
               {runtimeState}
             </span>
           </div>
         );
-      })}
-
-      {layout.placements.flatMap((placement) => {
-        const device = devicesById.get(placement.deviceId);
-        const type = device?.type ?? placement.presetKey ?? "DEVICE";
-
-        return getFarmDevicePorts(type).map((port) => {
-          const endpoint = endpointFor(placement, port);
-
-          return (
-            <div
-              key={`${placement.deviceId}-${port}`}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
-              style={{
-                left: `${(endpoint.point.x / layout.width) * 100}%`,
-                top: `${(endpoint.point.y / layout.height) * 100}%`,
-              }}
-            >
-              <span
-                className="block h-3 w-3 rounded-full border-2 bg-white shadow-sm"
-                style={{
-                  borderColor: DEVICE_COLORS[type] ?? "#0284c7",
-                }}
-              />
-              <span className="absolute left-1/2 top-3 -translate-x-1/2 text-[8px] font-bold uppercase text-slate-600">
-                {getFarmDevicePortRole(port) === "inlet" ? "IN" : "OUT"}
-              </span>
-            </div>
-          );
-        });
       })}
     </div>
   );
