@@ -119,7 +119,7 @@ export default function BackgroundItemNode({
       onDragEnd={handleDragEnd}
     >
       {selected ? (
-        <Circle radius={50} stroke="#2563eb" strokeWidth={3} dash={[6, 4]} />
+        <Circle radius={50} stroke="#16a34a" strokeWidth={3} dash={[6, 4]} />
       ) : null}
 
       {item.type === "TREE" ? (
@@ -201,21 +201,21 @@ export default function BackgroundItemNode({
 
       {item.type === "WATER_TANK" ? (
         <>
-          <Rect x={-18} y={6} width={6} height={24} fill="#64748b" />
-          <Rect x={12} y={6} width={6} height={24} fill="#64748b" />
+          <Rect x={-18} y={6} width={6} height={24} fill="#15803d" />
+          <Rect x={12} y={6} width={6} height={24} fill="#15803d" />
           <Rect
             x={-28}
             y={-18}
             width={56}
             height={34}
             fill="#7dd3fc"
-            stroke="#0284c7"
+            stroke="#16a34a"
             strokeWidth={3}
             cornerRadius={8}
           />
           <Line
             points={[-28, -6, 28, -6]}
-            stroke="#0284c7"
+            stroke="#16a34a"
             strokeWidth={2}
             opacity={0.6}
           />
@@ -278,9 +278,9 @@ export default function BackgroundItemNode({
           <Line points={[-28, 10, -28, -2]} stroke="#059669" strokeWidth={3} />
           <Line points={[0, 10, 0, -2]} stroke="#059669" strokeWidth={3} />
           <Line points={[28, 10, 28, -2]} stroke="#059669" strokeWidth={3} />
-          <Circle x={-28} y={-6} radius={4} fill="#38bdf8" />
-          <Circle x={0} y={-6} radius={4} fill="#38bdf8" />
-          <Circle x={28} y={-6} radius={4} fill="#38bdf8" />
+          <Circle x={-28} y={-6} radius={4} fill="#ffffff" />
+          <Circle x={0} y={-6} radius={4} fill="#ffffff" />
+          <Circle x={28} y={-6} radius={4} fill="#ffffff" />
         </>
       ) : null}
 
@@ -327,7 +327,7 @@ export default function BackgroundItemNode({
                 y={local.y}
                 radius={active ? 8 : 5}
                 fill="#ffffff"
-                stroke={active ? "#2563eb" : "#16a34a"}
+                stroke={active ? "#16a34a" : "#16a34a"}
                 strokeWidth={2}
                 onMouseDown={(event) => {
                   event.cancelBubble = true;

@@ -132,7 +132,7 @@ function MoistureGauge({ value }: { value: number }) {
       <path
         d={arc}
         fill="none"
-        stroke="#e2e8f0"
+        stroke="#bbf7d0"
         strokeWidth="6"
         strokeLinecap="round"
       />
@@ -178,7 +178,7 @@ function MoistureGauge({ value }: { value: number }) {
         textAnchor="middle"
         fontSize="10"
         fontWeight="700"
-        fill="#0369a1"
+        fill="#166534"
       >
         {value}%
       </text>

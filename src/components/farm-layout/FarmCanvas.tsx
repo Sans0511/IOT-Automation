@@ -101,13 +101,13 @@ type FarmCanvasProps = {
 
 const DEVICE_COLORS: Record<string, string> = {
   VALVE: "#f97316",
-  MOISTURE_SENSOR: "#0ea5e9",
-  PUMP: "#8b5cf6",
+  MOISTURE_SENSOR: "#16a34a",
+  PUMP: "#15803d",
   WEATHER_STATION: "#14b8a6",
-  MOTOR_PUMP: "#7c3aed",
+  MOTOR_PUMP: "#15803d",
   SOLENOID_VALVE: "#ea580c",
-  RAIN_DETECTION: "#0ea5e9",
-  SMART_IRRIGATION_CONTROLLER: "#4f46e5",
+  RAIN_DETECTION: "#16a34a",
+  SMART_IRRIGATION_CONTROLLER: "#065f46",
 };
 
 const VISUALLY_HIDDEN_STYLE: CSSProperties = {
@@ -189,7 +189,7 @@ function DeviceNode({
   onAlignDrag: (id: string, x: number, y: number) => FarmPoint;
   onMove: (deviceId: string, x: number, y: number) => void;
 }) {
-  const color = DEVICE_COLORS[device.type] ?? "#64748b";
+  const color = DEVICE_COLORS[device.type] ?? "#15803d";
   const [hovered, setHovered] = useState(false);
   const showPorts = linkMode || selected || highlighted || hovered;
   const motorPumpImage = useCanvasImage(
@@ -256,7 +256,7 @@ function DeviceNode({
           width={156}
           height={108}
           cornerRadius={10}
-          stroke={highlighted ? "#2563eb" : "#16a34a"}
+          stroke={highlighted ? "#16a34a" : "#16a34a"}
           strokeWidth={2}
           dash={[6, 4]}
         />
@@ -344,7 +344,7 @@ function DeviceNode({
                     id={`${device.id}:${port}`}
                     radius={active ? 8 : 5}
                     fill="#ffffff"
-                    stroke={active ? "#2563eb" : color}
+                    stroke={active ? "#16a34a" : color}
                     strokeWidth={2}
                     onMouseDown={(event) => {
                       event.cancelBubble = true;
@@ -365,7 +365,7 @@ function DeviceNode({
                     fontSize={8}
                     fontStyle="bold"
                     align="center"
-                    fill={active ? "#1d4ed8" : "#475569"}
+                    fill={active ? "#15803d" : "#166534"}
                     listening={false}
                   />
                 </Group>
@@ -390,7 +390,7 @@ function DeviceNode({
           fontStyle="bold"
           align="center"
           ellipsis
-          fill="#1f2937"
+          fill="#065f46"
         />
         <Text
           x={-68}
@@ -399,7 +399,7 @@ function DeviceNode({
           text={DEVICE_TYPE_LABELS[device.type] ?? device.type}
           fontSize={10}
           align="center"
-          fill="#64748b"
+          fill="#15803d"
         />
 
     </Group>

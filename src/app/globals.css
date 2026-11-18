@@ -1,9 +1,81 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+[class*="bg-slate-"],
+[class*="bg-zinc-"],
+[class*="bg-gray-"],
+[class*="bg-sky-"],
+[class*="bg-blue-"],
+[class*="bg-indigo-"],
+[class*="bg-cyan-"],
+[class*="bg-violet-"],
+[class*="bg-purple-"],
+[class*="bg-black"] {
+  background-color: #ffffff !important;
+}
+
+[class*="border-slate-"],
+[class*="border-zinc-"],
+[class*="border-gray-"],
+[class*="border-sky-"],
+[class*="border-blue-"],
+[class*="border-indigo-"],
+[class*="border-cyan-"],
+[class*="divide-slate-"],
+[class*="divide-zinc-"],
+[class*="divide-gray-"] {
+  border-color: #bbf7d0 !important;
+}
+
+[class*="text-slate-"],
+[class*="text-zinc-"],
+[class*="text-gray-"],
+[class*="text-sky-"],
+[class*="text-blue-"],
+[class*="text-indigo-"],
+[class*="text-cyan-"],
+[class*="text-violet-"],
+[class*="text-purple-"] {
+  color: #065f46 !important;
+}
+
+[class*="text-slate-400"],
+[class*="text-slate-500"],
+[class*="text-slate-600"],
+[class*="text-zinc-400"],
+[class*="text-zinc-500"],
+[class*="text-zinc-600"],
+[class*="text-gray-400"],
+[class*="text-gray-500"],
+[class*="text-gray-600"] {
+  color: #15803d !important;
+}
+
+[class*="ring-slate-"],
+[class*="ring-zinc-"],
+[class*="ring-gray-"],
+[class*="ring-sky-"],
+[class*="ring-blue-"],
+[class*="ring-indigo-"],
+[class*="ring-cyan-"] {
+  --tw-ring-color: #bbf7d0 !important;
+}
+
+[class*="shadow-slate-"],
+[class*="shadow-zinc-"],
+[class*="shadow-gray-"],
+[class*="shadow-sky-"],
+[class*="shadow-blue-"],
+[class*="shadow-indigo-"],
+[class*="shadow-cyan-"] {
+  --tw-shadow-color: #bbf7d0 !important;
+}
+
 :root {
   --rain-width: 1.5px;
-  --rain-color: oklch(0.62 0.19 255 / 0.95);
-  --rain-glow: 0 0 8px rgb(37 99 235 / 0.65);
+  --rain-color: rgb(255 255 255 / 0.95);
+  --rain-glow: 0 0 8px rgb(22 101 52 / 0.55);
   --rain-start-top: -12%;
   --rain-end-top: 112%;
   --rain-angle: 14deg;

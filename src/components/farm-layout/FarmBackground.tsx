@@ -39,21 +39,21 @@ export default function FarmBackground({
 
       <Line
         points={[70, 140, width - 70, 140]}
-        stroke="#5aa9d6"
+        stroke="#22c55e"
         strokeWidth={6}
         dash={[18, 12]}
         opacity={0.75}
       />
       <Line
         points={[70, width / 2 + 5, width - 70, width / 2 + 5]}
-        stroke="#5aa9d6"
+        stroke="#22c55e"
         strokeWidth={6}
         dash={[18, 12]}
         opacity={0.75}
       />
       <Line
         points={[70, 660, width - 70, 660]}
-        stroke="#5aa9d6"
+        stroke="#22c55e"
         strokeWidth={6}
         dash={[18, 12]}
         opacity={0.75}
@@ -100,8 +100,8 @@ export default function FarmBackground({
         x={110}
         y={90}
         radius={34}
-        fill="#74b6d8"
-        stroke="#2f7fa8"
+        fill="#86efac"
+        stroke="#16a34a"
         strokeWidth={3}
       />
       <Text
@@ -109,7 +109,7 @@ export default function FarmBackground({
         y={132}
         text="Water tank"
         fontSize={13}
-        fill="#31546a"
+        fill="#065f46"
       />
 
       <Rect
@@ -133,7 +133,7 @@ export default function FarmBackground({
 
       <Line
         points={[144, 90, 420, 90, 420, 160, 450, 160]}
-        stroke="#4a9bc7"
+        stroke="#22c55e"
         strokeWidth={5}
         lineJoin="round"
       />
