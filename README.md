@@ -60,6 +60,18 @@ Green & White `1200×800` farm canvas with pumps, valves, and live telemetry.
 
 Raindrop visual state (`RAINING`) and `60s` stale sensor indicator (`STALE`).
 
+### Manual Device Control
+
+![Manual Device Control](docs/screenshots/manuall_on_off.png)
+
+Manual pump/valve ON and OFF control from the digital twin layout.
+
+### Confirmation Modal
+
+![Confirmation Modal](docs/screenshots/on_off_model.png)
+
+Green confirmation modal shown before an ON/OFF device command is sent.
+
 ---
 
 ## Data model
