@@ -48,8 +48,17 @@ All long-running processes must share the same MongoDB, Redis, MQTT, and JWT set
 
 ## Screenshots
 
-- **Digital Twin Layout:** `docs/screenshots/dashboard-canvas.png` — Green & White `1200×800` farm canvas with pumps, valves, and live telemetry.
-- **Rain & Stale Watchdog:** `docs/screenshots/rain-and-stale.png` — Raindrop visual state (`RAINING`) and `60s` stale sensor indicator (`STALE`).
+### Digital Twin Layout
+
+![Digital Twin Layout](docs/screenshots/dashboard-canvas.png)
+
+Green & White `1200×800` farm canvas with pumps, valves, and live telemetry.
+
+### Rain & Stale Watchdog
+
+![Rain & Stale Watchdog](docs/screenshots/rain-and-stale.png)
+
+Raindrop visual state (`RAINING`) and `60s` stale sensor indicator (`STALE`).
 
 ---
 
