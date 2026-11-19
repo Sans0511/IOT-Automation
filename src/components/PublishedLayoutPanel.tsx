@@ -263,14 +263,8 @@ export function PublishedLayoutPanel({ farm }: { farm: PublishedFarm | null }) {
         onRequest={requestCommand}
       />
 
-      <section
-        id="farm-layout"
-        className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-      >
-        <div
-          id="live-status"
-          className="mb-5 flex flex-wrap items-center justify-between gap-3"
-        >
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
               {farmName}
