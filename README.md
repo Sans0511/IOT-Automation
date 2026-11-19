@@ -72,6 +72,36 @@ Manual pump/valve ON and OFF control from the digital twin layout.
 
 Green confirmation modal shown before an ON/OFF device command is sent.
 
+### Layout Creation Canvas
+
+![Layout Creation Canvas](docs/screenshots/layout_creation_canva.png)
+
+React-Konva layout editor canvas for placing devices, background items, and flow connections.
+
+### Layout Creation Settings
+
+![Layout Creation Settings](docs/screenshots/layout_creation_settings.png)
+
+Layout editor settings and controls used while building and publishing the digital twin.
+
+### Devices & Access
+
+![Devices & Access](docs/screenshots/devices&access.png)
+
+Device and access management views for the farm.
+
+### User Creation
+
+![User Creation](docs/screenshots/user_creation.png)
+
+Admin view for creating users and assigning roles.
+
+### Farm Creation
+
+![Farm Creation](docs/screenshots/farm_creation.png)
+
+Farm creation form with owner assignment.
+
 ---
 
 ## Data model
