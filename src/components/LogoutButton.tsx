@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 export function LogoutButton({ className = "" }: { className?: string }) {
   const [open, setOpen] = useState(false);
@@ -70,63 +71,66 @@ export function LogoutButton({ className = "" }: { className?: string }) {
         Logout
       </button>
 
-      {open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 p-4"
-          role="presentation"
-          onClick={() => {
-            if (!busy) {
-              setOpen(false);
-            }
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="logout-title"
-            className="w-full max-w-md rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h3
-              id="logout-title"
-              className="text-lg font-semibold text-emerald-950"
+      {typeof document !== "undefined" && open
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-emerald-950/60 p-4"
+              role="presentation"
+              onClick={() => {
+                if (!busy) {
+                  setOpen(false);
+                }
+              }}
             >
-              Log out?
-            </h3>
-            <p className="mt-3 text-sm text-emerald-800">
-              You will need to sign in again to continue.
-            </p>
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="logout-title"
+                className="w-full max-w-md rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-xl"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <h3
+                  id="logout-title"
+                  className="text-lg font-semibold text-emerald-950"
+                >
+                  Log out?
+                </h3>
+                <p className="mt-3 text-sm text-emerald-800">
+                  You will need to sign in again to continue.
+                </p>
 
-            {error ? (
-              <p
-                role="alert"
-                className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300"
-              >
-                {error}
-              </p>
-            ) : null}
+                {error ? (
+                  <p
+                    role="alert"
+                    className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                  >
+                    {error}
+                  </p>
+                ) : null}
 
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setOpen(false)}
-                className="rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void confirmLogout()}
-                className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {busy ? "Logging out..." : "Logout"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setOpen(false)}
+                    className="rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void confirmLogout()}
+                    className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {busy ? "Logging out..." : "Logout"}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }
