@@ -4,6 +4,8 @@ A digital twin for farm automation. See your farm on a live visual layout and tu
 
 **Built with:** Next.js 16 · React 19 · TypeScript · Tailwind · React-Konva · Prisma + MongoDB · Redis · MQTT · Server-Sent Events (SSE)
 
+**Deployed at:** https://iot-automation-rho.vercel.app
+
 > Keep Prisma pinned to `6.19.3`. Prisma 7 has no MongoDB connector.
 
 ---
@@ -84,11 +86,12 @@ Other states: `OFFLINE`, `STALE`.
 
 - **Login:** Short-lived access token (15 min) and refresh token (7 days), both in HttpOnly cookies. Tokens are never in the response body.
 - **Refresh:** Tokens rotate on every use. Reusing an old one revokes the whole session family.
+- **Logout:** `POST /api/auth/logout` revokes the refresh session family and clears both auth cookies.
 - **Roles:** `USER` sees only their own farms. `ADMIN` can manage everything, but can't demote or delete themselves, and at least one admin must remain.
 - **Realtime stream:** Checks access token and farm ownership before opening the SSE connection.
 - **MQTT in production:** Must use `mqtts://` or `wss://` with a username and password. Set per-device ACLs on the broker.
 
-**Not built in yet (add at platform level):** rate limiting, logout endpoint, CSP/security headers, audit trail.
+**Not built in yet (add at platform level):** rate limiting, CSP/security headers, audit trail.
 
 ---
 
@@ -96,11 +99,12 @@ Other states: `OFFLINE`, `STALE`.
 
 | Area | Routes |
 | --- | --- |
-| Auth | `POST /api/auth/login` · `/refresh` · `/register` (admin) |
+| Auth | `POST /api/auth/login` · `/refresh` · `/logout` · `/register` (admin) |
 | Farms | `GET/POST /api/farms` · `GET/PATCH/DELETE /api/farms/{id}` |
 | Devices | `GET/POST /api/devices` · `GET/PATCH/DELETE /api/devices/{id}` |
 | Command | `POST /api/devices/{id}/command` with `{ "command": "ON" }` |
 | Layout | `GET /api/layout?email=` |
+| Dashboard realtime SSE | `GET /api/realtime/stream?farmId=` |
 | Telemetry SSE | `GET /api/telemetry/stream?farmId=&deviceId=` |
 | Admin | `/api/admin/farms`, `/api/admin/farms/{id}/layout` (GET/PUT), `/api/admin/users/{id}` |
 | Health | `GET :3001/health` · `GET :3001/health/ready` |
@@ -132,6 +136,8 @@ WS_PORT="3001"
 WEBSOCKET_ALLOWED_ORIGINS="http://localhost:3000"
 ```
 
+`WS_PORT` and `WEBSOCKET_ALLOWED_ORIGINS` are only for the optional standalone WebSocket server. The dashboard uses same-origin SSE, so no separate WebSocket host or `NEXT_PUBLIC_WS_URL` is required.
+
 Generate a secret:
 
 ```bash
@@ -162,6 +168,38 @@ Open `http://localhost:3000`. In production, use `npm run build && npm run start
 
 ---
 
+## Vercel deployment
+
+Vercel runs the Next.js web app, APIs, and SSE stream. It does not run the MQTT worker. Run `npm run mqtt:worker` separately on a long-lived host such as a VPS, Railway, Render, or Fly, with the same MongoDB, Redis, MQTT, and JWT settings.
+
+Production URL: https://iot-automation-rho.vercel.app
+
+Vercel build settings:
+
+- Framework: Next.js
+- Build command: `npm run build`
+- Install command: `npm install`
+- Output: default/auto
+
+Set these in **Vercel Project Settings → Environment Variables**:
+
+```text
+DATABASE_URL="mongodb+srv://<user>:<password>@<cluster>/iot-automation"
+REDIS_URL="rediss://default:<password>@<endpoint>:<port>"
+JWT_ACCESS_SECRET="long-random-value"
+JWT_REFRESH_SECRET="different-long-random-value"
+MQTT_BROKER_URL="mqtts://<user>:<password>@<host>:8883"
+MQTT_CACHE_TTL_SECONDS="86400"
+```
+
+`MQTT_BROKER_URL` must use `mqtts://` or `wss://` with a username and password in production. Anonymous brokers are rejected. The broker user needs publish access to `farm/+/device/+/command` and subscribe access to `farm/+/device/+/status` and `farm/+/device/+/telemetry`.
+
+Do not set `NEXT_PUBLIC_WS_URL`. Vercel does not need `WS_PORT` or `WEBSOCKET_ALLOWED_ORIGINS`; the dashboard uses same-origin SSE at `/api/realtime/stream`.
+
+Redeploy after changing Vercel env vars, and restart the external MQTT worker after changing its env vars. Confirm the SSE response uses `Content-Type: text/event-stream` and is not buffered by a proxy.
+
+---
+
 ## Simulator
 
 `hardware-similator.js` publishes fake data over MQTT only. It sends moisture every `INTERVAL_MS` (default 1s) and repeats a 46-second cycle of valve, pump, and rain events. Stop it with Ctrl+C.
@@ -175,7 +213,7 @@ npm test && npm run lint && npm run typecheck && npm run build
 npx prisma validate
 ```
 
-**Quick live check:** Start all four processes, sign in, confirm the moisture gauge moves, stop the simulator for 60+ seconds to see `STALE`, then check `/health/ready`.
+**Quick live check:** Start the web app and MQTT worker (plus the simulator for test data), sign in, confirm the moisture gauge moves, stop the simulator for 60+ seconds to see `STALE`, then check `/health/ready`.
 
 Smoke-test MQTT:
 
@@ -205,7 +243,8 @@ mosquitto_pub -h <host> -p 8883 -u <user> -P <pass> -q 1 \
 
 ## Production checklist
 
-- Node 22, with all four processes supervised and set to restart
+- Node 22, with the web app and MQTT worker supervised and set to restart; add the optional WebSocket server only if used
+- On Vercel, set all runtime env vars in Project Settings and run the MQTT worker outside Vercel
 - HTTPS everywhere, and separate strong JWT secrets in a secret manager
 - MongoDB with TLS, auth, allowlist, and backups
 - Redis with AUTH/TLS and Pub/Sub
@@ -222,5 +261,5 @@ mosquitto_pub -h <host> -p 8883 -u <user> -P <pass> -q 1 \
 - The dashboard shows the first published farm (oldest first).
 - Deleting or moving a device doesn't update saved layouts. Reopen and republish.
 - One refresh session per user; a new login replaces the old one.
-- There is no logout route yet.
+- Logout clears both auth cookies and revokes the refresh session family.
 - The dashboard uses SSE on the same origin, so no separate WebSocket host is required.
